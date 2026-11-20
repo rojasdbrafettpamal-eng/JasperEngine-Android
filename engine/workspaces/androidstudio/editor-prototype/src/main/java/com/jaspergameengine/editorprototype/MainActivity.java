@@ -34,6 +34,7 @@ public final class MainActivity extends Activity {
     private static final int REQUEST_OPEN_SCENE = 4101;
     private static final int REQUEST_SAVE_SCENE = 4102;
     private static final int REQUEST_EXPORT_PROJECT = 4103;
+    private static final int REQUEST_OPEN_PROJECT = 4104;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -61,6 +62,11 @@ public final class MainActivity extends Activity {
         actions.addView(add, weighted());
         actions.addView(export, weighted());
         root.addView(actions, new LinearLayout.LayoutParams(-1, dp(52)));
+        LinearLayout projectActions = row();
+        Button openProject = button("Abrir proyecto JE");
+        projectActions.addView(openProject, new LinearLayout.LayoutParams(-1, dp(44)));
+        root.addView(projectActions, new LinearLayout.LayoutParams(-1, dp(46)));
+        openProject.setOnClickListener(v -> openProjectPicker());
         open.setOnClickListener(v -> openScenePicker());
         save.setOnClickListener(v -> saveScenePicker());
 
@@ -123,6 +129,16 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void openProjectPicker() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try {
+            startActivityForResult(intent, REQUEST_OPEN_PROJECT);
+        } catch (Exception e) {
+            note("No se pudo abrir el selector de proyectos.");
+        }
+    }
+
     private void exportProjectPicker() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
@@ -154,6 +170,7 @@ public final class MainActivity extends Activity {
         if (requestCode == REQUEST_SAVE_SCENE) saveScene(uri);
         else if (requestCode == REQUEST_OPEN_SCENE) loadScene(uri);
         else if (requestCode == REQUEST_EXPORT_PROJECT) exportProject(uri);
+        else if (requestCode == REQUEST_OPEN_PROJECT) openProject(uri);
     }
 
     private void exportProject(Uri treeUri) {
@@ -175,6 +192,62 @@ public final class MainActivity extends Activity {
         } catch (Exception e) {
             note("No se pudo exportar el proyecto: " + e.getMessage());
         }
+    }
+
+    private void openProject(Uri treeUri) {
+        try {
+            final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
+            getContentResolver().takePersistableUriPermission(treeUri, takeFlags);
+            Uri root = DocumentsContract.buildDocumentUriUsingTree(treeUri,
+                    DocumentsContract.getTreeDocumentId(treeUri));
+            Uri sceneFile = findChild(root, "Main.scene");
+            if (sceneFile == null) {
+                note("No encontré Main.scene en esa carpeta. Elige la carpeta del proyecto JasperEngine.");
+                return;
+            }
+            StringBuilder contents = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                    getContentResolver().openInputStream(sceneFile), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) contents.append(line).append('\n');
+            }
+            ArrayList<SceneView.Node> nodes = parseProjectScene(contents.toString());
+            if (nodes == null) {
+                note("No pude leer Main.scene: el formato no coincide con el exportador de este prototipo.");
+                return;
+            }
+            scene.replaceScene(nodes);
+            refreshSelection();
+            note("Proyecto abierto en la vista de prueba. No es el editor completo.");
+        } catch (Exception e) {
+            note("No se pudo abrir el proyecto: " + e.getMessage());
+        }
+    }
+
+    private ArrayList<SceneView.Node> parseProjectScene(String yaml) throws Exception {
+        ArrayList<SceneView.Node> nodes = new ArrayList<>();
+        boolean inEntities = false;
+        String pendingName = null;
+        for (String line : yaml.split("\\r?\\n")) {
+            if (line.equals("entities:")) { inEntities = true; continue; }
+            if (!inEntities) continue;
+            String trimmed = line.trim();
+            if (trimmed.startsWith("name: ")) {
+                String encoded = trimmed.substring("name: ".length());
+                pendingName = new JSONArray("[" + encoded + "]").getString(0);
+            } else if (trimmed.startsWith("position: [") && pendingName != null) {
+                String values = trimmed.substring("position: [".length(), trimmed.lastIndexOf(']'));
+                String[] xy = values.split(",");
+                if (xy.length < 2) return null;
+                float x = Float.parseFloat(xy[0].trim()) / 1280f;
+                float y = Float.parseFloat(xy[1].trim()) / 720f;
+                nodes.add(new SceneView.Node(pendingName, Math.max(0.08f, Math.min(0.92f, x)),
+                        Math.max(0.08f, Math.min(0.92f, y))));
+                pendingName = null;
+            }
+        }
+        if (nodes.isEmpty()) return null;
+        return nodes;
     }
 
     private Uri createChildDirectory(Uri parent, String name) throws Exception {
