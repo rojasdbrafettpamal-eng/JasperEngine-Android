@@ -5,6 +5,14 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.content.Intent;
+import android.net.Uri;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -21,6 +29,8 @@ public final class MainActivity extends Activity {
     private SceneView scene;
     private TextView selectionLabel;
     private EditText nameInput;
+    private static final int REQUEST_OPEN_SCENE = 4101;
+    private static final int REQUEST_SAVE_SCENE = 4102;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -46,8 +56,8 @@ public final class MainActivity extends Activity {
         actions.addView(save, weighted());
         actions.addView(add, weighted());
         root.addView(actions, new LinearLayout.LayoutParams(-1, dp(52)));
-        open.setOnClickListener(v -> note("Abrir proyecto aún no está conectado."));
-        save.setOnClickListener(v -> note("Guardar proyecto aún no está conectado."));
+        open.setOnClickListener(v -> openScenePicker());
+        save.setOnClickListener(v -> saveScenePicker());
 
         scene = new SceneView(this);
         root.addView(scene, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -93,6 +103,93 @@ public final class MainActivity extends Activity {
         });
         scene.setSelectionChanged(this::refreshSelection);
         setContentView(root);
+    }
+
+    private void openScenePicker() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/json");
+        intent.putExtra(Intent.EXTRA_TITLE, "Abrir escena");
+        try {
+            startActivityForResult(intent, REQUEST_OPEN_SCENE);
+        } catch (Exception e) {
+            note("No se pudo abrir el selector de archivos.");
+        }
+    }
+
+    private void saveScenePicker() {
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/json");
+        intent.putExtra(Intent.EXTRA_TITLE, "MiEscena.jasper-scene.json");
+        try {
+            startActivityForResult(intent, REQUEST_SAVE_SCENE);
+        } catch (Exception e) {
+            note("No se pudo abrir el selector para guardar.");
+        }
+    }
+
+    @Override @SuppressWarnings("deprecation")
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        Uri uri = data.getData();
+        if (requestCode == REQUEST_SAVE_SCENE) saveScene(uri);
+        else if (requestCode == REQUEST_OPEN_SCENE) loadScene(uri);
+    }
+
+    private void saveScene(Uri uri) {
+        try {
+            JSONArray objects = new JSONArray();
+            for (SceneView.Node node : scene.snapshot()) {
+                JSONObject item = new JSONObject();
+                item.put("name", node.name);
+                item.put("x", node.x);
+                item.put("y", node.y);
+                objects.put(item);
+            }
+            JSONObject document = new JSONObject();
+            document.put("format", "jasperengine-mobile-scene");
+            document.put("version", 1);
+            document.put("objects", objects);
+            try (OutputStream out = getContentResolver().openOutputStream(uri, "wt")) {
+                if (out == null) throw new IllegalStateException("No se pudo abrir el archivo");
+                out.write(document.toString(2).getBytes(StandardCharsets.UTF_8));
+                out.flush();
+            }
+            note("Escena guardada. Puedes encontrarla en la carpeta que elegiste.");
+        } catch (Exception e) {
+            note("No se pudo guardar la escena: " + e.getMessage());
+        }
+    }
+
+    private void loadScene(Uri uri) {
+        try {
+            StringBuilder json = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                    getContentResolver().openInputStream(uri), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) json.append(line);
+            }
+            JSONObject document = new JSONObject(json.toString());
+            if (!"jasperengine-mobile-scene".equals(document.optString("format"))) {
+                note("Ese archivo no parece una escena de este prototipo.");
+                return;
+            }
+            JSONArray objects = document.getJSONArray("objects");
+            ArrayList<SceneView.Node> nodes = new ArrayList<>();
+            for (int i = 0; i < objects.length(); i++) {
+                JSONObject item = objects.getJSONObject(i);
+                nodes.add(new SceneView.Node(item.optString("name", "Objeto " + (i + 1)),
+                        (float) item.optDouble("x", 0.5), (float) item.optDouble("y", 0.5)));
+            }
+            if (nodes.isEmpty()) nodes.add(new SceneView.Node("Objeto 1", 0.5f, 0.5f));
+            scene.replaceScene(nodes);
+            refreshSelection();
+            note("Escena abierta correctamente.");
+        } catch (Exception e) {
+            note("No se pudo abrir la escena: " + e.getMessage());
+        }
     }
 
     private void addMoveButton(LinearLayout row, String label, float dx, float dy) {
@@ -159,6 +256,14 @@ public final class MainActivity extends Activity {
 
         void setSelectionChanged(Runnable listener) { onSelectionChanged = listener; }
         Node selected() { return nodes.get(selectedIndex); }
+        ArrayList<Node> snapshot() { return new ArrayList<>(nodes); }
+
+        void replaceScene(ArrayList<Node> replacement) {
+            nodes.clear();
+            nodes.addAll(replacement);
+            selectedIndex = 0;
+            invalidate();
+        }
 
         void addObject() {
             int number = nodes.size() + 1;
