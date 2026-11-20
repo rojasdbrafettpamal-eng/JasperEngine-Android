@@ -3,3 +3,4 @@ plugins {
 }
 include ':app'
 include ':jasperbridge'
+include ':editor-prototype'
