@@ -26,6 +26,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import java.util.ArrayList;
@@ -37,6 +38,10 @@ public final class MainActivity extends Activity {
     private EditText nameInput;
     private Button playButton;
     private TextView projectLabel;
+    private Uri workspaceRootUri;
+    private Uri activeProjectUri;
+    private String activeProjectName = "";
+    private static final int REQUEST_WORKSPACE = 4105;
     private static final int REQUEST_OPEN_SCENE = 4101;
     private static final int REQUEST_SAVE_SCENE = 4102;
     private static final int REQUEST_EXPORT_PROJECT = 4103;
@@ -46,7 +51,12 @@ public final class MainActivity extends Activity {
         super.onCreate(state);
         getWindow().setStatusBarColor(Color.rgb(20, 23, 30));
         getWindow().setNavigationBarColor(Color.rgb(20, 23, 30));
+        String savedWorkspace = getSharedPreferences("editor", MODE_PRIVATE).getString("workspace", null);
+        if (savedWorkspace != null) workspaceRootUri = Uri.parse(savedWorkspace);
+        showHome();
+    }
 
+    private void buildEditor() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.rgb(20, 23, 30));
@@ -62,7 +72,7 @@ public final class MainActivity extends Activity {
         Button open = button("Abrir JSON");
         Button save = button("Guardar JSON");
         Button add = button("+ Objeto");
-        Button export = button("Proyecto JE");
+        Button export = button("Guardar proyecto");
         playButton = button("▶ Play");
         actions.addView(playButton, weighted());
         actions.addView(open, weighted());
@@ -73,8 +83,11 @@ public final class MainActivity extends Activity {
         LinearLayout projectActions = row();
         Button openProject = button("Abrir proyecto JE");
         projectActions.addView(openProject, new LinearLayout.LayoutParams(-1, dp(44)));
+        Button backHome = button("‹ Proyectos");
+        projectActions.addView(backHome, new LinearLayout.LayoutParams(-1, dp(44)));
         root.addView(projectActions, new LinearLayout.LayoutParams(-1, dp(46)));
-        openProject.setOnClickListener(v -> openProjectPicker());
+        backHome.setOnClickListener(v -> { saveActiveProject(); activeProjectUri = null; showHome(); });
+        openProject.setVisibility(View.GONE);
         open.setOnClickListener(v -> openScenePicker());
         save.setOnClickListener(v -> saveScenePicker());
 
@@ -124,13 +137,14 @@ public final class MainActivity extends Activity {
         panel.addView(moveRow, new LinearLayout.LayoutParams(-1, dp(46)));
         root.addView(panel, new LinearLayout.LayoutParams(-1, dp(205)));
 
-        export.setOnClickListener(v -> exportProjectPicker());
+        export.setOnClickListener(v -> saveActiveProject());
         add.setOnClickListener(v -> {
             scene.addObject();
             refreshSelection();
         });
         playButton.setOnClickListener(v -> togglePlayMode());
         scene.setSelectionChanged(this::refreshSelection);
+        editorRoot = root;
         setContentView(root);
     }
 
@@ -171,6 +185,133 @@ public final class MainActivity extends Activity {
     @Override protected void onPause() {
         if (playing) togglePlayMode();
         super.onPause();
+    }
+
+    private void showHome() {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(18), dp(22), dp(18), dp(18));
+        root.setBackgroundColor(Color.rgb(20, 23, 30));
+        TextView title = text("JasperEngine · Proyectos", 22, Color.WHITE);
+        root.addView(title, new LinearLayout.LayoutParams(-1, dp(54)));
+        TextView info = text(workspaceRootUri == null
+                ? "Primero elige o crea una carpeta raíz. Después los proyectos se guardarán dentro de ella sin volver a preguntarte."
+                : "Tus proyectos quedan guardados dentro de la carpeta que elegiste.",
+                14, Color.rgb(166, 177, 194));
+        root.addView(info, new LinearLayout.LayoutParams(-1, dp(72)));
+        Button chooseFolder = button(workspaceRootUri == null ? "Elegir o crear carpeta de proyectos" : "Cambiar carpeta raíz");
+        root.addView(chooseFolder, new LinearLayout.LayoutParams(-1, dp(52)));
+        chooseFolder.setOnClickListener(v -> workspacePicker());
+        if (workspaceRootUri != null) {
+            Button newProject = button("＋  Crear proyecto nuevo");
+            LinearLayout.LayoutParams newParams = new LinearLayout.LayoutParams(-1, dp(54));
+            newParams.topMargin = dp(14);
+            root.addView(newProject, newParams);
+            newProject.setOnClickListener(v -> askNewProjectName());
+            TextView listTitle = text("PROYECTOS", 12, Color.rgb(186, 199, 220));
+            LinearLayout.LayoutParams listTitleParams = new LinearLayout.LayoutParams(-1, dp(40));
+            listTitleParams.topMargin = dp(15);
+            root.addView(listTitle, listTitleParams);
+            ScrollView scroll = new ScrollView(this);
+            LinearLayout list = new LinearLayout(this);
+            list.setOrientation(LinearLayout.VERTICAL);
+            try {
+                Uri rootDoc = workspaceDocumentRoot();
+                Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(rootDoc,
+                        DocumentsContract.getDocumentId(rootDoc));
+                String[] columns = {DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE};
+                try (android.database.Cursor cursor = getContentResolver().query(children, columns, null, null, null)) {
+                    if (cursor != null) {
+                        int idCol = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
+                        int nameCol = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
+                        int typeCol = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE);
+                        while (cursor.moveToNext()) {
+                            if (!DocumentsContract.Document.MIME_TYPE_DIR.equals(cursor.getString(typeCol))) continue;
+                            String name = cursor.getString(nameCol);
+                            Uri childDoc = DocumentsContract.buildDocumentUriUsingTree(workspaceRootUri, cursor.getString(idCol));
+                            if (findChild(childDoc, "Main.scene") == null) continue;
+                            Uri childTree = DocumentsContract.buildTreeDocumentUri(childDoc.getAuthority(),
+                                    DocumentsContract.getDocumentId(childDoc));
+                            Button item = button("▣  " + name + "   ›");
+                            LinearLayout.LayoutParams itemParams = new LinearLayout.LayoutParams(-1, dp(54));
+                            itemParams.bottomMargin = dp(6);
+                            list.addView(item, itemParams);
+                            item.setOnClickListener(v -> {
+                                activeProjectName = name;
+                                openProject(childTree);
+                                projectLabel.setText("Proyecto: " + activeProjectName);
+                                setContentView(editorRoot);
+                            });
+                        }
+                    }
+                }
+            } catch (Exception e) { note("No pude leer la lista de proyectos: " + e.getMessage()); }
+            if (list.getChildCount() == 0) {
+                TextView empty = text("Aún no hay proyectos. Pulsa Crear proyecto nuevo.", 14, Color.rgb(166, 177, 194));
+                list.addView(empty, new LinearLayout.LayoutParams(-1, dp(52)));
+            }
+            scroll.addView(list);
+            root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        }
+        setContentView(root);
+    }
+
+    private View editorRoot;
+
+    private Uri workspaceDocumentRoot() {
+        return DocumentsContract.buildDocumentUriUsingTree(workspaceRootUri,
+                DocumentsContract.getTreeDocumentId(workspaceRootUri));
+    }
+
+    private void workspacePicker() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try { startActivityForResult(intent, REQUEST_WORKSPACE); }
+        catch (Exception e) { note("No se pudo abrir el selector de carpetas."); }
+    }
+
+    private void askNewProjectName() {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setText("Mi proyecto");
+        new AlertDialog.Builder(this).setTitle("Nombre del proyecto").setView(input)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Crear", (dialog, which) -> createProject(input.getText().toString()))
+                .show();
+    }
+
+    private void createProject(String requestedName) {
+        try {
+            String name = requestedName == null ? "" : requestedName.trim().replaceAll("[/\\\\:*?\\\"<>|]", "_");
+            if (name.isEmpty()) name = "Mi proyecto";
+            Uri root = workspaceDocumentRoot();
+            String candidate = name;
+            int number = 2;
+            while (findChild(root, candidate) != null) candidate = name + " " + number++;
+            Uri folder = createChildDirectory(root, candidate);
+            activeProjectUri = DocumentsContract.buildTreeDocumentUri(folder.getAuthority(),
+                    DocumentsContract.getDocumentId(folder));
+            activeProjectName = candidate;
+            buildEditor();
+            projectLabel.setText("Proyecto: " + activeProjectName);
+            saveActiveProject();
+            note("Proyecto creado dentro de tu carpeta de proyectos.");
+        } catch (Exception e) { note("No pude crear el proyecto: " + e.getMessage()); }
+    }
+
+    private void saveActiveProject() {
+        if (activeProjectUri == null) { note("Crea o abre un proyecto primero."); return; }
+        exportProject(activeProjectUri);
+    }
+
+    @Override public void onBackPressed() {
+        if (activeProjectUri != null) {
+            saveActiveProject();
+            activeProjectUri = null;
+            showHome();
+        } else super.onBackPressed();
     }
 
     private void openScenePicker() {
@@ -223,7 +364,15 @@ public final class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Uri uri = data.getData();
-        if (requestCode == REQUEST_SAVE_SCENE) saveScene(uri);
+        if (requestCode == REQUEST_WORKSPACE) {
+            try {
+                int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                getContentResolver().takePersistableUriPermission(uri, flags);
+                workspaceRootUri = uri;
+                getSharedPreferences("editor", MODE_PRIVATE).edit().putString("workspace", uri.toString()).apply();
+                showHome();
+            } catch (Exception e) { note("No pude guardar el permiso de esa carpeta."); }
+        } else if (requestCode == REQUEST_SAVE_SCENE) saveScene(uri);
         else if (requestCode == REQUEST_OPEN_SCENE) loadScene(uri);
         else if (requestCode == REQUEST_EXPORT_PROJECT) exportProject(uri);
         else if (requestCode == REQUEST_OPEN_PROJECT) openProject(uri);
@@ -231,8 +380,6 @@ public final class MainActivity extends Activity {
 
     private void exportProject(Uri treeUri) {
         try {
-            final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
-            getContentResolver().takePersistableUriPermission(treeUri, takeFlags);
             String treeId = DocumentsContract.getTreeDocumentId(treeUri);
             Uri root = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeId);
             String sceneGuid = java.util.UUID.randomUUID().toString().replace("-", "");
@@ -260,8 +407,8 @@ public final class MainActivity extends Activity {
 
     private void openProject(Uri treeUri) {
         try {
-            final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
-            getContentResolver().takePersistableUriPermission(treeUri, takeFlags);
+            activeProjectUri = treeUri;
+            if (scene == null) buildEditor();
             Uri root = DocumentsContract.buildDocumentUriUsingTree(treeUri,
                     DocumentsContract.getTreeDocumentId(treeUri));
             Uri sceneFile = findChild(root, "Main.scene");
