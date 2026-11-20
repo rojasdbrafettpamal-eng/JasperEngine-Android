@@ -6,7 +6,8 @@ Isolated mobile editor UI prototype, separate from JasperEngine's game player/ex
 - Save/Open JSON scene snapshots using Android's file picker (prototype interchange only).
 - **Proyecto JE** exports a minimal project folder with `project.yaml`, `Main.scene`, `assets/`, `lua/`, and a default `audio/Main.mixer`.
 - **Abrir proyecto JE** selects one of those exported folders and loads its placeholder names, positions, and linked Lua text back into the prototype view. It does not run JasperEngine or become the full editor.
-- The **Lua** button opens a plain text editor for the selected object. Its code is included in the JSON snapshot and exported as `scripts/Script_N.lua`, linked from the scene. The template exposes JasperEngine's `init` and `onUpdate` lifecycle; users can edit it for the engine's documented APIs, including physics callbacks, but this Android prototype does not execute or validate Lua.
+- The **Lua** button opens a plain text editor for the selected object. Its code is included in the JSON snapshot and exported as `scripts/Script_N.lua`, linked from the scene. The template exposes JasperEngine's `init` and `onUpdate` lifecycle plus 2D collision callback stubs. This Android prototype does not execute or validate Lua.
+- **Física 2D / Collider** adds a serialized `rigidbody2d` component to the selected object, with static/dynamic/kinematic body type, a polygon or circle collider, and an optional sensor/trigger. The settings are stored in prototype JSON and emitted in the JasperEngine scene YAML; the prototype itself still does not simulate physics or run scripts.
 
 The scene YAML follows the repository's current template shape and maps placeholder positions into a 1280x720 2D scene. This remains an experimental limited export: images, scripts, materials, full scene properties, native engine integration, and complete project editing are not implemented.
 
