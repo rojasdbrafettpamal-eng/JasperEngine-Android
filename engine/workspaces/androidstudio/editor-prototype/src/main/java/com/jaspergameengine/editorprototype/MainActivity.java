@@ -94,9 +94,14 @@ public final class MainActivity extends Activity {
         Button rename = button("Aplicar");
         editRow.addView(rename, new LinearLayout.LayoutParams(dp(76), dp(48)));
         Button editCode = button("Lua");
-        editRow.addView(editCode, new LinearLayout.LayoutParams(dp(64), dp(48)));
+        editRow.addView(editCode, new LinearLayout.LayoutParams(dp(56), dp(48)));
         panel.addView(editRow, new LinearLayout.LayoutParams(-1, dp(50)));
         editCode.setOnClickListener(v -> editLuaForSelected());
+        Button physicsButton = button("Física 2D / Collider");
+        panel.addView(physicsButton, new LinearLayout.LayoutParams(-1, dp(42)));
+        physicsButton.setOnClickListener(v -> editPhysicsForSelected());
+        panel.setPadding(dp(12), dp(5), dp(12), dp(6));
+        panelTitle.setText("ESCENA  /  PROPIEDADES · LUA · FÍSICA");
         rename.setOnClickListener(v -> {
             scene.renameSelected(nameInput.getText().toString().trim());
             refreshSelection();
@@ -244,11 +249,21 @@ public final class MainActivity extends Activity {
         final Uri scriptDirectory = scriptsFolder;
         boolean inEntities = false;
         String pendingName = null;
+        boolean inRigidBody = false;
+        boolean inColliders = false;
         for (String line : yaml.split("\\r?\\n")) {
             if (line.equals("entities:")) { inEntities = true; continue; }
             if (!inEntities) continue;
             String trimmed = line.trim();
+            if (trimmed.equals("rigidbody2d:")) {
+                if (!nodes.isEmpty()) nodes.get(nodes.size() - 1).physicsEnabled = true;
+                inRigidBody = true;
+                inColliders = false;
+                continue;
+            }
             if (trimmed.startsWith("name: ")) {
+                inRigidBody = false;
+                inColliders = false;
                 String encoded = trimmed.substring("name: ".length());
                 pendingName = new JSONArray("[" + encoded + "]").getString(0);
             } else if (trimmed.startsWith("position: [") && pendingName != null) {
@@ -260,6 +275,14 @@ public final class MainActivity extends Activity {
                 nodes.add(new SceneView.Node(pendingName, Math.max(0.08f, Math.min(0.92f, x)),
                         Math.max(0.08f, Math.min(0.92f, y))));
                 pendingName = null;
+            } else if (inRigidBody && trimmed.equals("colliders:")) {
+                inColliders = true;
+            } else if (inRigidBody && !nodes.isEmpty() && inColliders && trimmed.startsWith("- type: ")) {
+                nodes.get(nodes.size() - 1).colliderType = trimmed.substring("- type: ".length()).trim();
+            } else if (inRigidBody && !nodes.isEmpty() && !inColliders && trimmed.startsWith("type: ")) {
+                nodes.get(nodes.size() - 1).bodyType = trimmed.substring("type: ".length()).trim();
+            } else if (inRigidBody && !nodes.isEmpty() && trimmed.startsWith("sensor: ")) {
+                nodes.get(nodes.size() - 1).sensor = Boolean.parseBoolean(trimmed.substring("sensor: ".length()));
             } else if (trimmed.startsWith("path: scripts/") && !nodes.isEmpty() && scriptDirectory != null) {
                 String fileName = trimmed.substring("path: scripts/".length()).trim();
                 Uri luaFile = findChild(scriptDirectory, fileName);
@@ -389,6 +412,7 @@ public final class MainActivity extends Activity {
                     .append("        visible: true\n        billboardRotation: [1, 0, 0, 0]\n")
                     .append("        billboard: false\n        fakeBillboard: false\n")
                     .append("        cylindricalBillboard: false\n");
+            if (n.physicsEnabled) y.append(rigidbody2DYaml(n));
             if (n.luaCode != null && !n.luaCode.trim().isEmpty()) {
                 String guid = java.util.UUID.randomUUID().toString().replace("-", "");
                 y.append("      script:\n        scripts:\n          - type: lua\n")
@@ -399,6 +423,30 @@ public final class MainActivity extends Activity {
             }
             index++;
         }
+        return y.toString();
+    }
+
+    private String rigidbody2DYaml(SceneView.Node node) {
+        StringBuilder y = new StringBuilder("      rigidbody2d:\\n")
+                .append("        enabled: true\\n")
+                .append("        type: ").append(node.bodyType).append("\\n")
+                .append("        numColliders: 1\\n")
+                .append("        gravityScale: 1\\n        linearDamping: 0\\n        angularDamping: 0\\n")
+                .append("        fixedRotation: false\\n        collisionDetection: discrete\\n")
+                .append("        sleepingMode: start_awake\\n        useAutoMass: true\\n        mass: 1\\n")
+                .append("        autoCenterOfMass: true\\n        centerOfMass: [0, 0]\\n")
+                .append("        autoInertia: true\\n        inertia: 0\\n        material: \\\"\\\"\\n")
+                .append("        colliders:\\n          - type: ").append(node.colliderType).append("\\n")
+                .append("            pointA: [0, 0]\\n            pointB: [0, 0]\\n")
+                .append("            radius: ").append("circle".equals(node.colliderType) ? "32" : "0").append("\\n")
+                .append("            loop: false\\n            density: 1\\n            friction: 0.6\\n")
+                .append("            restitution: 0\\n            sensor: ").append(node.sensor).append("\\n")
+                .append("            enableHitEvents: false\\n            contactEvents: true\\n")
+                .append("            preSolveEvents: false\\n            sensorEvents: false\\n")
+                .append("            categoryBits: 1\\n            maskBits: 65535\\n            groupIndex: 0\\n")
+                .append("            points: ");
+        if ("circle".equals(node.colliderType)) y.append("[]\\n");
+        else y.append("[[-32, -24], [32, -24], [32, 24], [-32, 24]]\\n");
         return y.toString();
     }
 
@@ -428,6 +476,10 @@ public final class MainActivity extends Activity {
                 item.put("x", node.x);
                 item.put("y", node.y);
                 if (node.luaCode != null) item.put("luaCode", node.luaCode);
+                item.put("physicsEnabled", node.physicsEnabled);
+                item.put("bodyType", node.bodyType);
+                item.put("colliderType", node.colliderType);
+                item.put("sensor", node.sensor);
                 objects.put(item);
             }
             JSONObject document = new JSONObject();
@@ -465,6 +517,10 @@ public final class MainActivity extends Activity {
                 SceneView.Node node = new SceneView.Node(item.optString("name", "Objeto " + (i + 1)),
                         (float) item.optDouble("x", 0.5), (float) item.optDouble("y", 0.5));
                 node.luaCode = item.optString("luaCode", null);
+                node.physicsEnabled = item.optBoolean("physicsEnabled", false);
+                node.bodyType = item.optString("bodyType", "static");
+                node.colliderType = item.optString("colliderType", "polygon");
+                node.sensor = item.optBoolean("sensor", false);
                 nodes.add(node);
             }
             if (nodes.isEmpty()) nodes.add(new SceneView.Node("Objeto 1", 0.5f, 0.5f));
@@ -474,6 +530,44 @@ public final class MainActivity extends Activity {
         } catch (Exception e) {
             note("No se pudo abrir la escena: " + e.getMessage());
         }
+    }
+
+    private void editPhysicsForSelected() {
+        SceneView.Node node = scene.selected();
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(20), dp(8), dp(20), dp(4));
+        TextView explanation = text("El cuerpo define cómo responde el objeto; el collider es su forma para tocar otros cuerpos.",
+                13, Color.WHITE);
+        form.addView(explanation, new LinearLayout.LayoutParams(-1, dp(54)));
+        android.widget.Spinner bodyType = new android.widget.Spinner(this);
+        String[] bodyTypes = {"Estático (no se mueve)", "Dinámico (responde a física)", "Cinématico (movido por script)"};
+        bodyType.setAdapter(new android.widget.ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, bodyTypes));
+        bodyType.setSelection("dynamic".equals(node.bodyType) ? 1 : ("kinematic".equals(node.bodyType) ? 2 : 0));
+        form.addView(bodyType, new LinearLayout.LayoutParams(-1, dp(48)));
+        android.widget.Spinner colliderType = new android.widget.Spinner(this);
+        String[] shapes = {"Polígono (caja básica)", "Círculo"};
+        colliderType.setAdapter(new android.widget.ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, shapes));
+        colliderType.setSelection("circle".equals(node.colliderType) ? 1 : 0);
+        form.addView(colliderType, new LinearLayout.LayoutParams(-1, dp(48)));
+        android.widget.CheckBox sensor = new android.widget.CheckBox(this);
+        sensor.setText("Sensor / trigger (atraviesa y detecta)");
+        sensor.setTextColor(Color.WHITE);
+        sensor.setChecked(node.sensor);
+        form.addView(sensor, new LinearLayout.LayoutParams(-1, dp(48)));
+        new AlertDialog.Builder(this)
+                .setTitle("Física 2D · " + node.name)
+                .setView(form)
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Guardar ajustes", (dialog, which) -> {
+                    node.physicsEnabled = true;
+                    node.bodyType = bodyType.getSelectedItemPosition() == 1 ? "dynamic" :
+                            (bodyType.getSelectedItemPosition() == 2 ? "kinematic" : "static");
+                    node.colliderType = colliderType.getSelectedItemPosition() == 1 ? "circle" : "polygon";
+                    node.sensor = sensor.isChecked();
+                    note("Cuerpo y collider guardados para exportarlos con la escena.");
+                })
+                .show();
     }
 
     private void editLuaForSelected() {
@@ -692,6 +786,10 @@ public final class MainActivity extends Activity {
         private static final class Node {
             String name;
             String luaCode;
+            boolean physicsEnabled = false;
+            String bodyType = "static";
+            String colliderType = "polygon";
+            boolean sensor = false;
             float x, y;
             Node(String name, float x, float y) { this.name = name; this.x = x; this.y = y; }
         }
