@@ -40,6 +40,7 @@ private boolean scriptEditorActive = false;
 private SceneView.Node scriptEditingNode;
 private Uri activeProjectUri;
 private String activeProjectName = "";
+private String projectDimension = "2D";
 private static final int REQUEST_WORKSPACE = 4105;
 private static final int REQUEST_OPEN_SCENE = 4101;
 private static final int REQUEST_SAVE_SCENE = 4102;
@@ -111,7 +112,10 @@ panel.addView(editRow, new LinearLayout.LayoutParams(-1, dp(50)));
 editCode.setOnClickListener(v -> openScriptEditor(scene.selected()));
 Button physicsButton = button("Física 2D / Collider");
 panel.addView(physicsButton, new LinearLayout.LayoutParams(-1, dp(42)));
-physicsButton.setOnClickListener(v -> editPhysicsForSelected());
+physicsButton.setOnClickListener(v -> {
+if ("3D".equals(projectDimension)) note("La física 3D se implementará en la siguiente etapa.");
+else editPhysicsForSelected();
+});
 panel.setPadding(dp(12), dp(5), dp(12), dp(6));
 panelTitle.setText("ESCENA  /  PROPIEDADES · JAVASCRIPT · FÍSICA");
 rename.setOnClickListener(v -> {
@@ -134,12 +138,22 @@ refreshSelection();
 });
 playButton.setOnClickListener(v -> togglePlayMode());
 scene.setSelectionChanged(this::refreshSelection);
+scene.setOnSceneChanged(this::scheduleAutoSave);
 editorRoot = root;
 setContentView(root);
 }
 private boolean playing = false;
 private long lastPlayTick;
 private final Handler playHandler = new Handler(Looper.getMainLooper());
+private final Handler autoSaveHandler = new Handler(Looper.getMainLooper());
+private final Runnable autoSaveRunnable = () -> {
+if (activeProjectUri != null && scene != null && !playing) exportProject(activeProjectUri, false);
+};
+private void scheduleAutoSave() {
+if (activeProjectUri == null || scriptEditorActive || playing) return;
+autoSaveHandler.removeCallbacks(autoSaveRunnable);
+autoSaveHandler.postDelayed(autoSaveRunnable, 450);
+}
 private final Runnable playLoop = new Runnable() {
 @Override public void run() {
 if (!playing) return;
@@ -151,6 +165,10 @@ playHandler.postDelayed(this, 16);
 }
 };
 private void togglePlayMode() {
+if ("3D".equals(projectDimension)) {
+note("El proyecto está marcado como 3D. El editor y Play 3D se implementarán en la siguiente etapa.");
+return;
+}
 playing = !playing;
 if (playing) {
 scene.setPreviewMode(true);
@@ -171,6 +189,10 @@ note("Vista previa detenida; volviste al editor.");
 }
 @Override protected void onPause() {
 if (playing) togglePlayMode();
+if (activeProjectUri != null && scene != null) {
+autoSaveHandler.removeCallbacks(autoSaveRunnable);
+try { exportProject(activeProjectUri, false); } catch (Exception ignored) { }
+}
 super.onPause();
 }
 private void showHome() {
@@ -194,6 +216,24 @@ LinearLayout.LayoutParams newParams = new LinearLayout.LayoutParams(-1, dp(54));
 newParams.topMargin = dp(14);
 root.addView(newProject, newParams);
 newProject.setOnClickListener(v -> askNewProjectName());
+String lastUriText = getSharedPreferences("editor", MODE_PRIVATE).getString("lastProjectUri", null);
+String lastName = getSharedPreferences("editor", MODE_PRIVATE).getString("lastProjectName", "");
+if (lastUriText != null && !lastName.isEmpty()) {
+try {
+Uri lastUri = Uri.parse(lastUriText);
+Button resume = button("↻  Continuar proyecto: " + lastName);
+LinearLayout.LayoutParams resumeParams = new LinearLayout.LayoutParams(-1, dp(48));
+resumeParams.topMargin = dp(6);
+root.addView(resume, resumeParams);
+resume.setOnClickListener(v -> {
+activeProjectName = lastName;
+activeProjectUri = lastUri;
+openProject(lastUri);
+projectLabel.setText(projectDimension.equals("3D") ? "Proyecto 3D · editor 3D en preparación" : "Proyecto: " + activeProjectName);
+setContentView(editorRoot);
+});
+} catch (Exception ignored) { }
+}
 TextView listTitle = text("PROYECTOS", 12, Color.rgb(186, 199, 220));
 LinearLayout.LayoutParams listTitleParams = new LinearLayout.LayoutParams(-1, dp(40));
 listTitleParams.topMargin = dp(15);
@@ -219,15 +259,16 @@ Uri childDoc = DocumentsContract.buildDocumentUriUsingTree(workspaceRootUri, cur
 if (findChild(childDoc, "Main.scene") == null) continue;
 Uri childTree = DocumentsContract.buildTreeDocumentUri(childDoc.getAuthority(),
 DocumentsContract.getDocumentId(childDoc));
-Button item = button("▣  " + name + "   ›");
+Button item = button("▣  " + name + "   ·   " + readProjectDimension(childDoc));
 LinearLayout.LayoutParams itemParams = new LinearLayout.LayoutParams(-1, dp(54));
 itemParams.bottomMargin = dp(6);
 list.addView(item, itemParams);
 item.setOnClickListener(v -> {
 activeProjectName = name;
 activeProjectUri = childTree;
+rememberActiveProject();
 openProject(childTree);
-projectLabel.setText("Proyecto: " + activeProjectName);
+projectLabel.setText("3D".equals(projectDimension) ? "Proyecto 3D · editor 3D en preparación" : "Proyecto 2D: " + activeProjectName);
 setContentView(editorRoot);
 });
 Uri scriptsFolder = findChild(childDoc, "scripts");
@@ -248,6 +289,7 @@ list.addView(scriptRow, new LinearLayout.LayoutParams(-1, dp(42)));
 scriptRow.setOnClickListener(v -> {
 activeProjectName = name;
 activeProjectUri = childTree;
+rememberActiveProject();
 openProject(childTree);
 setContentView(editorRoot);
 ArrayList<SceneView.Node> sceneNodes = scene.snapshot();
@@ -290,15 +332,33 @@ try { startActivityForResult(intent, REQUEST_WORKSPACE); }
 catch (Exception e) { note("No se pudo abrir el selector de carpetas."); }
 }
 private void askNewProjectName() {
+LinearLayout form = new LinearLayout(this);
+form.setOrientation(LinearLayout.VERTICAL);
+form.setPadding(dp(20), dp(8), dp(20), dp(4));
 EditText input = new EditText(this);
 input.setSingleLine(true);
 input.setText("Mi proyecto");
-new AlertDialog.Builder(this).setTitle("Nombre del proyecto").setView(input)
+input.setHint("Nombre del proyecto");
+form.addView(input, new LinearLayout.LayoutParams(-1, dp(54)));
+TextView kindLabel = text("Tipo de proyecto", 14, Color.WHITE);
+form.addView(kindLabel, new LinearLayout.LayoutParams(-1, dp(38)));
+android.widget.RadioGroup kind = new android.widget.RadioGroup(this);
+kind.setOrientation(android.widget.RadioGroup.HORIZONTAL);
+android.widget.RadioButton twoD = new android.widget.RadioButton(this);
+twoD.setText("2D"); twoD.setTextColor(Color.WHITE); twoD.setId(View.generateViewId());
+android.widget.RadioButton threeD = new android.widget.RadioButton(this);
+threeD.setText("3D (en preparación)"); threeD.setTextColor(Color.WHITE); threeD.setId(View.generateViewId());
+kind.addView(twoD); kind.addView(threeD); kind.check(twoD.getId());
+form.addView(kind, new LinearLayout.LayoutParams(-1, dp(48)));
+TextView note = text("La opción 3D crea y guarda el proyecto como 3D; el editor 3D se implementará después.", 12, Color.rgb(166, 177, 194));
+form.addView(note, new LinearLayout.LayoutParams(-1, dp(50)));
+new AlertDialog.Builder(this).setTitle("Crear proyecto").setView(form)
 .setNegativeButton("Cancelar", null)
-.setPositiveButton("Crear", (dialog, which) -> createProject(input.getText().toString()))
+.setPositiveButton("Crear", (dialog, which) -> createProject(input.getText().toString(),
+kind.getCheckedRadioButtonId() == threeD.getId() ? "3D" : "2D"))
 .show();
 }
-private void createProject(String requestedName) {
+private void createProject(String requestedName, String dimension) {
 try {
 String name = requestedName == null ? "" : requestedName.trim().replaceAll("[/\\\\:*?\\\"<>|]", "_");
 if (name.isEmpty()) name = "Mi proyecto";
@@ -310,14 +370,36 @@ Uri folder = createChildDirectory(root, candidate);
 activeProjectUri = DocumentsContract.buildTreeDocumentUri(folder.getAuthority(),
 DocumentsContract.getDocumentId(folder));
 activeProjectName = candidate;
+projectDimension = dimension == null ? "2D" : dimension;
+rememberActiveProject();
 buildEditor();
-projectLabel.setText("Proyecto: " + activeProjectName);
+projectLabel.setText("3D".equals(projectDimension) ? "Proyecto 3D · editor 3D en preparación" : "Proyecto 2D: " + activeProjectName);
 saveActiveProject();
 note("Proyecto creado dentro de tu carpeta de proyectos.");
 } catch (Exception e) { note("No pude crear el proyecto: " + e.getMessage()); }
 }
+private String readProjectDimension(Uri projectTree) {
+try {
+Uri root = DocumentsContract.buildDocumentUriUsingTree(projectTree, DocumentsContract.getTreeDocumentId(projectTree));
+Uri metadata = findChild(root, "MobileScene.json");
+if (metadata == null) return "2D";
+try (BufferedReader reader = new BufferedReader(new InputStreamReader(getContentResolver().openInputStream(metadata), StandardCharsets.UTF_8))) {
+StringBuilder json = new StringBuilder(); String line;
+while ((line = reader.readLine()) != null) json.append(line);
+return new JSONObject(json.toString()).optString("dimension", "2D");
+}
+} catch (Exception ignored) { return "2D"; }
+}
+private void rememberActiveProject() {
+if (activeProjectUri == null) return;
+getSharedPreferences("editor", MODE_PRIVATE).edit()
+.putString("lastProjectUri", activeProjectUri.toString())
+.putString("lastProjectName", activeProjectName)
+.apply();
+}
 private void saveActiveProject() {
 if (activeProjectUri == null) { note("Crea o abre un proyecto primero."); return; }
+rememberActiveProject();
 exportProject(activeProjectUri);
 }
 @Override public void onBackPressed() {
@@ -389,7 +471,8 @@ else if (requestCode == REQUEST_OPEN_SCENE) loadScene(uri);
 else if (requestCode == REQUEST_EXPORT_PROJECT) exportProject(uri);
 else if (requestCode == REQUEST_OPEN_PROJECT) openProject(uri);
 }
-private void exportProject(Uri treeUri) {
+private void exportProject(Uri treeUri) { exportProject(treeUri, true); }
+private void exportProject(Uri treeUri, boolean showMessage) {
 try {
 String treeId = DocumentsContract.getTreeDocumentId(treeUri);
 Uri root = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeId);
@@ -408,14 +491,15 @@ if (node.jsCode != null && !node.jsCode.trim().isEmpty()) {
 writeChild(scripts, safeScriptFileName(node.scriptName), "text/javascript", node.jsCode);
 }
 }
-note("Proyecto guardado con la escena y sus archivos JavaScript.");
+if (showMessage) note("Proyecto guardado con la escena y sus archivos JavaScript.");
 } catch (Exception e) {
-note("No se pudo exportar el proyecto: " + e.getMessage());
+if (showMessage) note("No se pudo exportar el proyecto: " + e.getMessage());
 }
 }
 private void openProject(Uri treeUri) {
 try {
 activeProjectUri = treeUri;
+rememberActiveProject();
 if (scene == null) buildEditor();
 Uri root = DocumentsContract.buildDocumentUriUsingTree(treeUri,
 DocumentsContract.getTreeDocumentId(treeUri));
@@ -657,13 +741,15 @@ objects.put(item);
 }
 JSONObject document = new JSONObject();
 document.put("format", "jasperengine-mobile-scene");
-document.put("version", 2);
+document.put("version", 3);
+document.put("dimension", projectDimension);
 document.put("objects", objects);
 return document;
 }
 private ArrayList<SceneView.Node> nodesFromJson(String text) throws Exception {
 JSONObject document = new JSONObject(text);
 if (!"jasperengine-mobile-scene".equals(document.optString("format"))) return null;
+projectDimension = document.optString("dimension", "2D");
 JSONArray objects = document.getJSONArray("objects");
 ArrayList<SceneView.Node> nodes = new ArrayList<>();
 for (int i = 0; i < objects.length(); i++) {
@@ -743,6 +829,7 @@ node.bodyType = bodyType.getSelectedItemPosition() == 1 ? "dynamic" :
 (bodyType.getSelectedItemPosition() == 2 ? "kinematic" : "static");
 node.colliderType = colliderType.getSelectedItemPosition() == 1 ? "circle" : "polygon";
 node.sensor = sensor.isChecked();
+scheduleAutoSave();
 note("Cuerpo y collider guardados para exportarlos con la escena.");
 })
 .show();
@@ -768,6 +855,11 @@ EditText name = new EditText(this);
 name.setSingleLine(true);
 name.setText(node.scriptName);
 name.setHint("Nombre del archivo, por ejemplo Cubo.js");
+name.addTextChangedListener(new android.text.TextWatcher() {
+public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+public void onTextChanged(CharSequence s, int start, int before, int count) { node.scriptName = s.toString(); scheduleAutoSave(); }
+public void afterTextChanged(android.text.Editable e) { }
+});
 name.setTextColor(Color.WHITE);
 name.setHintTextColor(Color.rgb(150, 160, 176));
 root.addView(name, new LinearLayout.LayoutParams(-1, dp(52)));
@@ -781,6 +873,11 @@ source.setHintTextColor(Color.rgb(150, 160, 176));
 source.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
 | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
 source.setText(node.jsCode);
+source.addTextChangedListener(new android.text.TextWatcher() {
+public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+public void onTextChanged(CharSequence s, int start, int before, int count) { node.jsCode = s.toString(); scheduleAutoSave(); }
+public void afterTextChanged(android.text.Editable e) { }
+});
 source.setPadding(dp(10), dp(10), dp(10), dp(10));
 source.setBackgroundColor(Color.rgb(28, 33, 43));
 root.addView(source, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -800,6 +897,7 @@ node.scriptName = fileName;
 node.jsCode = source.getText().toString();
 scriptEditorActive = false;
 scene.invalidate();
+scheduleAutoSave();
 setContentView(editorRoot);
 saveActiveProject();
 note("Guardé " + fileName + ". En Play se ejecutará en la escena de prueba.");
@@ -874,6 +972,8 @@ nodes.add(new Node("Objeto 1", 0.5f, 0.5f));
 setBackgroundColor(Color.rgb(15, 18, 24));
 }
 void setSelectionChanged(Runnable listener) { onSelectionChanged = listener; }
+private Runnable onSceneChanged = () -> {};
+void setOnSceneChanged(Runnable listener) { onSceneChanged = listener == null ? () -> {} : listener; }
 Node selected() { return nodes.get(selectedIndex); }
 ArrayList<Node> snapshot() { return new ArrayList<>(nodes); }
 void select(int index) { if (index >= 0 && index < nodes.size()) { selectedIndex = index; onSelectionChanged.run(); invalidate(); } }
@@ -888,16 +988,19 @@ int number = nodes.size() + 1;
 nodes.add(new Node("Objeto " + number, 0.38f + (number % 3) * 0.1f, 0.42f + (number % 4) * 0.08f));
 selectedIndex = nodes.size() - 1;
 invalidate();
+onSceneChanged.run();
 }
 void renameSelected(String name) {
 if (!name.isEmpty()) selected().name = name;
 invalidate();
+onSceneChanged.run();
 }
 void moveSelected(float dx, float dy) {
 Node n = selected();
 n.x = clamp(n.x + dx);
 n.y = clamp(n.y + dy);
 invalidate();
+onSceneChanged.run();
 }
 void setPreviewMode(boolean enabled) {
 previewMode = enabled;
@@ -1042,6 +1145,7 @@ Node n = selected();
 n.x = clamp(x / Math.max(1, getWidth()));
 n.y = clamp(y / Math.max(1, getHeight()));
 invalidate();
+onSceneChanged.run();
 return true;
 }
 if (e.getAction() == MotionEvent.ACTION_UP) {
