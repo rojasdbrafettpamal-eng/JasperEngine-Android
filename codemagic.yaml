@@ -1,0 +1,12 @@
+workflows:
+  android-editor-prototype:
+    name: JasperEngine Android editor UI prototype
+    max_build_duration: 60
+    instance_type: linux_x2
+    scripts:
+      - name: Build the Android editor UI prototype
+        script: |
+          cd engine/workspaces/androidstudio
+          ./gradlew --no-daemon :editor-prototype:assembleDebug
+    artifacts:
+      - engine/workspaces/androidstudio/editor-prototype/build/outputs/apk/debug/*.apk
