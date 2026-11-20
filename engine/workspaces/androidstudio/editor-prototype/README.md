@@ -4,7 +4,10 @@ Isolated mobile editor UI prototype, separate from JasperEngine's game player/ex
 
 - Add, select, drag, rename, and nudge simple 2D placeholder objects.
 - Save/Open JSON scene snapshots using Android's file picker (prototype interchange only).
-- **Proyecto JE** exports a minimal project folder with `project.yaml`, `Main.scene`, `assets/`, `lua/`, and a default `audio/Main.mixer`. The scene YAML follows the repository's current template shape and converts placeholder positions to a 1280x720 scene. This is an experimental export, not a complete JasperEngine editor project: images, scripts, materials, full scene properties and direct project importing are not implemented.
+- **Proyecto JE** exports a minimal project folder with `project.yaml`, `Main.scene`, `assets/`, `lua/`, and a default `audio/Main.mixer`.
+- **Abrir proyecto JE** selects one of those exported folders and loads its placeholder names and positions back into the prototype view. It does not run JasperEngine or become the full editor.
+
+The scene YAML follows the repository's current template shape and maps placeholder positions into a 1280x720 2D scene. This remains an experimental limited export: images, scripts, materials, full scene properties, native engine integration, and complete project editing are not implemented.
 
 Build from the repository root:
 
