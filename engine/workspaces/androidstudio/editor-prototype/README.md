@@ -1,10 +1,10 @@
 # JasperEngine Android editor UI prototype
 
-This is an isolated first-stage Android UI shell. It is deliberately separate from the Android game/player app, so it does not alter or claim to replace game export. The scene is temporary in-memory mock data: add/select/rename/drag objects and move them with touch controls. Open/save are clearly marked as not connected yet.
+An isolated first-stage Android editor UI shell, separate from the game's Android player/export path. It currently draws a small mock scene that supports adding, selecting, renaming, dragging and nudging objects with touch controls.
 
-Next integration step: replace the mock scene with JasperEngine editor/engine data and implement Android lifecycle, project storage, and touch-aware editor tools. This prototype is a UI test, not the complete editor and not yet validated on a device.
+The **Abrir** and **Guardar** buttons use Android's system document picker (Storage Access Framework). Save writes a JSON scene file to the folder the user chooses; Open reloads that prototype file. It does not yet use JasperEngine's native project/scene format, and it is not the complete editor.
 
-Build from the repository root with:
+Build from the repository root:
 
 ```sh
 cd engine/workspaces/androidstudio
