@@ -1,6 +1,7 @@
 package com.jaspergameengine.editorprototype;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -48,7 +49,7 @@ public final class MainActivity extends Activity {
         TextView title = text("JasperEngine  ·  Editor móvil", 19, Color.WHITE);
         title.setPadding(dp(16), dp(12), dp(12), dp(2));
         root.addView(title, new LinearLayout.LayoutParams(-1, dp(42)));
-        TextView project = text("Prototipo de interfaz · escena temporal", 12, Color.rgb(166, 177, 194));
+        TextView project = text("Prototipo 2D · escena y scripts Lua", 12, Color.rgb(166, 177, 194));
         project.setPadding(dp(16), 0, dp(12), dp(8));
         root.addView(project, new LinearLayout.LayoutParams(-1, dp(25)));
 
@@ -91,8 +92,11 @@ public final class MainActivity extends Activity {
         nameInput.setHintTextColor(Color.rgb(150, 160, 176));
         editRow.addView(nameInput, new LinearLayout.LayoutParams(0, dp(48), 1));
         Button rename = button("Aplicar");
-        editRow.addView(rename, new LinearLayout.LayoutParams(dp(96), dp(48)));
+        editRow.addView(rename, new LinearLayout.LayoutParams(dp(76), dp(48)));
+        Button editCode = button("Lua");
+        editRow.addView(editCode, new LinearLayout.LayoutParams(dp(64), dp(48)));
         panel.addView(editRow, new LinearLayout.LayoutParams(-1, dp(50)));
+        editCode.setOnClickListener(v -> editLuaForSelected());
         rename.setOnClickListener(v -> {
             scene.renameSelected(nameInput.getText().toString().trim());
             refreshSelection();
@@ -188,7 +192,15 @@ public final class MainActivity extends Activity {
             createChildDirectory(root, "lua");
             Uri audio = createChildDirectory(root, "audio");
             writeChild(audio, "Main.mixer", "application/json", mixerJson());
-            note("Proyecto JasperEngine exportado en la carpeta elegida (project.yaml y Main.scene).");
+            Uri scripts = createChildDirectory(root, "scripts");
+            int scriptIndex = 0;
+            for (SceneView.Node node : scene.snapshot()) {
+                if (node.luaCode != null && !node.luaCode.trim().isEmpty()) {
+                    writeChild(scripts, "Script_" + scriptIndex + ".lua", "text/plain", node.luaCode);
+                }
+                scriptIndex++;
+            }
+            note("Proyecto exportado con escena y scripts Lua adjuntos a sus objetos.");
         } catch (Exception e) {
             note("No se pudo exportar el proyecto: " + e.getMessage());
         }
@@ -211,7 +223,7 @@ public final class MainActivity extends Activity {
                 String line;
                 while ((line = reader.readLine()) != null) contents.append(line).append('\n');
             }
-            ArrayList<SceneView.Node> nodes = parseProjectScene(contents.toString());
+            ArrayList<SceneView.Node> nodes = parseProjectScene(contents.toString(), root);
             if (nodes == null) {
                 note("No pude leer Main.scene: el formato no coincide con el exportador de este prototipo.");
                 return;
@@ -224,8 +236,12 @@ public final class MainActivity extends Activity {
         }
     }
 
-    private ArrayList<SceneView.Node> parseProjectScene(String yaml) throws Exception {
+    private ArrayList<SceneView.Node> parseProjectScene(String yaml, Uri projectRoot) throws Exception {
         ArrayList<SceneView.Node> nodes = new ArrayList<>();
+        Uri scriptsFolder = findChild(projectRoot, "scripts");
+        if (scriptsFolder != null) scriptsFolder = DocumentsContract.buildDocumentUriUsingTree(projectRoot,
+                DocumentsContract.getDocumentId(scriptsFolder));
+        final Uri scriptDirectory = scriptsFolder;
         boolean inEntities = false;
         String pendingName = null;
         for (String line : yaml.split("\\r?\\n")) {
@@ -244,6 +260,18 @@ public final class MainActivity extends Activity {
                 nodes.add(new SceneView.Node(pendingName, Math.max(0.08f, Math.min(0.92f, x)),
                         Math.max(0.08f, Math.min(0.92f, y))));
                 pendingName = null;
+            } else if (trimmed.startsWith("path: scripts/") && !nodes.isEmpty() && scriptDirectory != null) {
+                String fileName = trimmed.substring("path: scripts/".length()).trim();
+                Uri luaFile = findChild(scriptDirectory, fileName);
+                if (luaFile != null) {
+                    StringBuilder code = new StringBuilder();
+                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                            getContentResolver().openInputStream(luaFile), StandardCharsets.UTF_8))) {
+                        String luaLine;
+                        while ((luaLine = reader.readLine()) != null) code.append(luaLine).append('\n');
+                    }
+                    nodes.get(nodes.size() - 1).luaCode = code.toString();
+                }
             }
         }
         if (nodes.isEmpty()) return null;
@@ -298,7 +326,7 @@ public final class MainActivity extends Activity {
                 "htmlUiSdfPrimitives: true\nhtmlUiTransformAwareText: true\n" +
                 "graphics:\n  terrainQuality:\n    macos: high\n    ios: low\n    web: medium\n    android: low\n    linux: high\n    windows: high\n  compressTerrainLayers: true\n" +
                 "windowMode: windowed\nwindowWidth: 1280\nwindowHeight: 720\nwindowResizable: true\n" +
-                "luaDir: lua\nversionControl:\n  lfs: true\n" +
+                "luaDir: .\nversionControl:\n  lfs: true\n" +
                 "startSceneId: " + sceneId + "\nmesh:\n  animationEntities: auto\n" +
                 "audio:\n  mixer: audio/Main.mixer\n  outputStage: linear\n  iosSessionCategory: ambient\n" +
                 "scenes:\n  - filepath: Main.scene\n    filepathGuid: " + sceneGuid + "\n";
@@ -351,6 +379,7 @@ public final class MainActivity extends Activity {
         ArrayList<SceneView.Node> nodes = scene.snapshot();
         if (nodes.isEmpty()) return y.append("  ~\n").toString();
         long entityId = 1001;
+        int index = 0;
         for (SceneView.Node n : nodes) {
             y.append("  - type: Entity\n    entity: ").append(entityId++).append("\n    name: ")
                     .append(yamlQuote(n.name)).append("\n    components:\n      transform:\n")
@@ -360,8 +389,28 @@ public final class MainActivity extends Activity {
                     .append("        visible: true\n        billboardRotation: [1, 0, 0, 0]\n")
                     .append("        billboard: false\n        fakeBillboard: false\n")
                     .append("        cylindricalBillboard: false\n");
+            if (n.luaCode != null && !n.luaCode.trim().isEmpty()) {
+                String guid = java.util.UUID.randomUUID().toString().replace("-", "");
+                y.append("      script:\n        scripts:\n          - type: lua\n")
+                        .append("            path: scripts/Script_").append(index).append(".lua\n")
+                        .append("            pathGuid: ").append(guid).append("\n")
+                        .append("            className: ").append(scriptClassName(n.name, n.luaCode)).append("\n")
+                        .append("            enabled: true\n");
+            }
+            index++;
         }
         return y.toString();
+    }
+
+    private String scriptClassName(String objectName, String luaCode) {
+        if (luaCode != null) {
+            java.util.regex.Matcher matcher = java.util.regex.Pattern
+                    .compile("local\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*=").matcher(luaCode);
+            if (matcher.find()) return matcher.group(1);
+        }
+        String name = objectName == null ? "ObjectScript" : objectName.replaceAll("[^A-Za-z0-9_]", "");
+        if (name.isEmpty() || Character.isDigit(name.charAt(0))) name = "ObjectScript";
+        return name;
     }
 
     private String yamlQuote(String value) {
@@ -378,6 +427,7 @@ public final class MainActivity extends Activity {
                 item.put("name", node.name);
                 item.put("x", node.x);
                 item.put("y", node.y);
+                if (node.luaCode != null) item.put("luaCode", node.luaCode);
                 objects.put(item);
             }
             JSONObject document = new JSONObject();
@@ -412,8 +462,10 @@ public final class MainActivity extends Activity {
             ArrayList<SceneView.Node> nodes = new ArrayList<>();
             for (int i = 0; i < objects.length(); i++) {
                 JSONObject item = objects.getJSONObject(i);
-                nodes.add(new SceneView.Node(item.optString("name", "Objeto " + (i + 1)),
-                        (float) item.optDouble("x", 0.5), (float) item.optDouble("y", 0.5)));
+                SceneView.Node node = new SceneView.Node(item.optString("name", "Objeto " + (i + 1)),
+                        (float) item.optDouble("x", 0.5), (float) item.optDouble("y", 0.5));
+                node.luaCode = item.optString("luaCode", null);
+                nodes.add(node);
             }
             if (nodes.isEmpty()) nodes.add(new SceneView.Node("Objeto 1", 0.5f, 0.5f));
             scene.replaceScene(nodes);
@@ -422,6 +474,56 @@ public final class MainActivity extends Activity {
         } catch (Exception e) {
             note("No se pudo abrir la escena: " + e.getMessage());
         }
+    }
+
+    private void editLuaForSelected() {
+        SceneView.Node node = scene.selected();
+        EditText code = new EditText(this);
+        code.setGravity(Gravity.TOP | Gravity.START);
+        code.setSingleLine(false);
+        code.setMinLines(12);
+        code.setTextSize(13);
+        code.setTypeface(android.graphics.Typeface.MONOSPACE);
+        code.setTextColor(Color.WHITE);
+        code.setHintTextColor(Color.rgb(150, 160, 176));
+        code.setHint("Escribe el script Lua de este objeto");
+        code.setText(node.luaCode == null ? defaultLuaScript(node.name) : node.luaCode);
+        int padding = dp(12);
+        code.setPadding(padding, padding, padding, padding);
+        new AlertDialog.Builder(this)
+                .setTitle("Script Lua · " + node.name)
+                .setView(code)
+                .setNegativeButton("Cancelar", null)
+                .setNeutralButton("Plantilla", (dialog, which) -> {
+                    node.luaCode = defaultLuaScript(node.name);
+                    note("Plantilla Lua puesta. Pulsa Lua otra vez para editarla.");
+                })
+                .setPositiveButton("Guardar código", (dialog, which) -> {
+                    node.luaCode = code.getText().toString();
+                    note("Código Lua guardado en este objeto.");
+                })
+                .show();
+    }
+
+    private String defaultLuaScript(String objectName) {
+        String className = objectName == null ? "ObjectScript" : objectName.replaceAll("[^A-Za-z0-9_]", "");
+        if (className.isEmpty() || Character.isDigit(className.charAt(0))) className = "ObjectScript";
+        return "---@class " + className + " : ScriptInstance\\n" +
+                "local " + className + " = {}\\n\\n" +
+                "function " + className + ":init()\\n" +
+                "    self.go = GameObject(self.scene, self.entity)\\n" +
+                "    RegisterEngineEvent(self, \\\"onUpdate\\\")\\n" +
+                "end\\n\\n" +
+                "function " + className + ":onUpdate()\\n" +
+                "    -- Lógica por cuadro (si este script está activo en el motor)\\n" +
+                "end\\n\\n" +
+                "function " + className + ":onCollisionEnter2D(collision)\\n" +
+                "    -- Contacto sólido: requiere Rigidbody2D y collider en la escena\\n" +
+                "end\\n\\n" +
+                "function " + className + ":onTriggerEnter2D(other)\\n" +
+                "    -- Trigger: requiere cuerpo/collider sensor configurado en la escena\\n" +
+                "end\\n\\n" +
+                "return " + className + "\\n";
     }
 
     private void addMoveButton(LinearLayout row, String label, float dx, float dy) {
@@ -589,6 +691,7 @@ public final class MainActivity extends Activity {
 
         private static final class Node {
             String name;
+            String luaCode;
             float x, y;
             Node(String name, float x, float y) { this.name = name; this.x = x; this.y = y; }
         }
