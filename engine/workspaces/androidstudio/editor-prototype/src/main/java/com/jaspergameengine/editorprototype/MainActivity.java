@@ -17,6 +17,9 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -32,6 +35,8 @@ public final class MainActivity extends Activity {
     private SceneView scene;
     private TextView selectionLabel;
     private EditText nameInput;
+    private Button playButton;
+    private TextView projectLabel;
     private static final int REQUEST_OPEN_SCENE = 4101;
     private static final int REQUEST_SAVE_SCENE = 4102;
     private static final int REQUEST_EXPORT_PROJECT = 4103;
@@ -49,15 +54,17 @@ public final class MainActivity extends Activity {
         TextView title = text("JasperEngine  ·  Editor móvil", 19, Color.WHITE);
         title.setPadding(dp(16), dp(12), dp(12), dp(2));
         root.addView(title, new LinearLayout.LayoutParams(-1, dp(42)));
-        TextView project = text("Prototipo 2D · escena y scripts Lua", 12, Color.rgb(166, 177, 194));
-        project.setPadding(dp(16), 0, dp(12), dp(8));
-        root.addView(project, new LinearLayout.LayoutParams(-1, dp(25)));
+        projectLabel = text("Prototipo 2D · escena, Lua y física", 12, Color.rgb(166, 177, 194));
+        projectLabel.setPadding(dp(16), 0, dp(12), dp(8));
+        root.addView(projectLabel, new LinearLayout.LayoutParams(-1, dp(25)));
 
         LinearLayout actions = row();
         Button open = button("Abrir JSON");
         Button save = button("Guardar JSON");
         Button add = button("+ Objeto");
         Button export = button("Proyecto JE");
+        playButton = button("▶ Play");
+        actions.addView(playButton, weighted());
         actions.addView(open, weighted());
         actions.addView(save, weighted());
         actions.addView(add, weighted());
@@ -122,8 +129,48 @@ public final class MainActivity extends Activity {
             scene.addObject();
             refreshSelection();
         });
+        playButton.setOnClickListener(v -> togglePlayMode());
         scene.setSelectionChanged(this::refreshSelection);
         setContentView(root);
+    }
+
+    private boolean playing = false;
+    private long lastPlayTick;
+    private final Handler playHandler = new Handler(Looper.getMainLooper());
+    private final Runnable playLoop = new Runnable() {
+        @Override public void run() {
+            if (!playing) return;
+            long now = SystemClock.uptimeMillis();
+            float dt = Math.min(0.05f, (now - lastPlayTick) / 1000f);
+            lastPlayTick = now;
+            scene.advancePreview(dt);
+            playHandler.postDelayed(this, 16);
+        }
+    };
+
+    private void togglePlayMode() {
+        playing = !playing;
+        if (playing) {
+            scene.setPreviewMode(true);
+            lastPlayTick = SystemClock.uptimeMillis();
+            playButton.setText("■ Stop");
+            playButton.setTextColor(Color.rgb(255, 145, 145));
+            projectLabel.setText("VISTA PREVIA · prototipo 2D · pulsa Stop para volver al editor");
+            playHandler.post(playLoop);
+            note("Vista previa iniciada. Usa las flechas en pantalla para mover el objeto seleccionado.");
+        } else {
+            playHandler.removeCallbacks(playLoop);
+            scene.setPreviewMode(false);
+            playButton.setText("▶ Play");
+            playButton.setTextColor(Color.WHITE);
+            projectLabel.setText("Prototipo 2D · escena, Lua y física");
+            note("Vista previa detenida; volviste al editor.");
+        }
+    }
+
+    @Override protected void onPause() {
+        if (playing) togglePlayMode();
+        super.onPause();
     }
 
     private void openScenePicker() {
@@ -674,6 +721,7 @@ public final class MainActivity extends Activity {
         private int selectedIndex = 0;
         private float downX, downY;
         private boolean dragging;
+        private boolean previewMode = false;
         private Runnable onSelectionChanged = () -> {};
 
         SceneView(android.content.Context context) {
@@ -709,6 +757,21 @@ public final class MainActivity extends Activity {
             Node n = selected();
             n.x = clamp(n.x + dx);
             n.y = clamp(n.y + dy);
+            invalidate();
+        }
+
+        void setPreviewMode(boolean enabled) {
+            previewMode = enabled;
+            invalidate();
+        }
+
+        void advancePreview(float dt) {
+            if (!previewMode) return;
+            for (Node n : nodes) {
+                if ("dynamic".equals(n.bodyType)) {
+                    n.y = clamp(n.y - 0.25f * dt);
+                }
+            }
             invalidate();
         }
 
@@ -748,7 +811,8 @@ public final class MainActivity extends Activity {
             paint.setTextAlign(Paint.Align.LEFT);
             paint.setTextSize(dp(11));
             paint.setColor(Color.rgb(170, 185, 205));
-            c.drawText("Vista de prueba · arrastra un objeto", dp(12), dp(20), paint);
+            c.drawText(previewMode ? "PLAY · vista previa 2D (sin motor Lua/física real)" :
+                    "Editor · arrastra un objeto", dp(12), dp(20), paint);
         }
 
         @Override public boolean onTouchEvent(MotionEvent e) {
@@ -758,7 +822,9 @@ public final class MainActivity extends Activity {
                 for (int i = nodes.size() - 1; i >= 0; i--) {
                     Node n = nodes.get(i);
                     if (Math.abs(x - n.x * getWidth()) < dp(44) && Math.abs(y - n.y * getHeight()) < dp(34)) {
-                        selectedIndex = i; dragging = true; onSelectionChanged.run(); break;
+                        selectedIndex = i;
+                        if (!previewMode) dragging = true;
+                        onSelectionChanged.run(); break;
                     }
                 }
                 invalidate();
