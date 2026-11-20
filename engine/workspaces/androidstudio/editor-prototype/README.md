@@ -1,16 +1,16 @@
-# JasperEngine Android editor prototype
+# JasperEngine Android editor UI prototype
 
-An isolated Android editor/preview prototype, separate from JasperEngine's native editor and game runtime.
+Isolated mobile editor UI prototype, separate from JasperEngine's game player/exporter.
 
-- On launch, the Projects screen lets the user choose one root folder with Android's document picker; that grant is persisted. Projects are created in subfolders and listed for reopening.
-- The editor can add/select/drag/rename simple 2D placeholder objects and save/open JSON.
-- **JavaScript** opens a full-screen code editor for the selected object. Each script has a `.js` filename, saves in the project `scripts/` folder, and appears as a named row under that project on the Projects screen. `MobileScene.json` persists the association between object, script filename, source, and physics settings.
-- Play runs `init(scene)` once and `update(scene, dt)` for saved scripts using the embedded Rhino interpreter. The script receives `scene.objetos`, with object fields `nombre`, `x`, `y`, `vx`, `vy`, `dinamico`, and `fisica`. Scripts can change an object's position or velocity. Java/Android class access is blocked and Rhino applies an instruction limit.
-- Play also runs this prototype's simple 2D simulation: gravity affects dynamic bodies; they land on the screen floor and static body colliders; static/dynamic/sensor settings are read from object data. This is not JasperEngine's native Box2D world, and JavaScript is not a native JasperEngine script component (JasperEngine's native script system is Lua).
-- **Física 2D / Collider** configures an object as static/dynamic/kinematic, with a polygon or circle collider and optional sensor. Settings are saved in `MobileScene.json` and exported to the limited JasperEngine scene YAML.
-- **Guardar proyecto** writes `project.yaml`, `Main.scene`, `MobileScene.json`, `scripts/`, `assets/`, and `audio/Main.mixer` into the active project without asking for the folder again.
+- Add, select, drag, rename, and nudge simple 2D placeholder objects.
+- Save/Open JSON scene snapshots using Android's file picker (prototype interchange only).
+- At launch the prototype shows a **Proyectos** home screen. The user chooses or creates a workspace folder once with Android's folder picker; its permission is persisted. Each new project gets its own subfolder automatically, and the home screen lists saved projects for reopening.
+- **Guardar proyecto** writes the current project's minimal folder (`project.yaml`, `Main.scene`, `assets/`, `lua/`, and `audio/Main.mixer`) into its selected workspace subfolder, without showing the folder picker every time.
+- Opening a listed project loads its placeholder names, positions, and linked Lua text back into the prototype view. It does not run JasperEngine or become the full editor.
+- The **Lua** button opens a plain text editor for the selected object. Its code is included in the JSON snapshot and exported as `scripts/Script_N.lua`, linked from the scene. The template exposes JasperEngine's `init` and `onUpdate` lifecycle plus 2D collision callback stubs. This Android prototype does not execute or validate Lua.
+- **Física 2D / Collider** adds a serialized `rigidbody2d` component to the selected object, with static/dynamic/kinematic body type, a polygon or circle collider, and an optional sensor/trigger. The settings are stored in prototype JSON and emitted in the JasperEngine scene YAML; the prototype itself still does not simulate physics or run scripts.
 
-This is still a prototype, not a full JasperEngine/Unity-equivalent editor. It does not run JasperEngine itself, execute arbitrary engine APIs, or provide full Box2D contact callbacks, rich rendering, or complete project import/export.
+The scene YAML follows the repository's current template shape and maps placeholder positions into a 1280x720 2D scene. This remains an experimental limited export: images, scripts, materials, full scene properties, native engine integration, and complete project editing are not implemented.
 
 Build from the repository root:
 
@@ -18,3 +18,5 @@ Build from the repository root:
 cd engine/workspaces/androidstudio
 ./gradlew --no-daemon :editor-prototype:assembleDebug
 ```
+- Projects autosave in their own folder on edits (debounced), on Android activity pause, and when leaving for the Projects screen. The home screen offers a “Continue project” shortcut for the most recently opened project, and each saved folder remains in the Projects list after restarting the app.
+- New-project dialog includes 2D and 3D choices. The chosen dimension is stored in `MobileScene.json`, shown on the home screen and on the editor status label. 3D is only a project-type marker in this stage; the 3D editor, rendering, physics and Play mode are explicitly not implemented yet. The 2D preview does not run for a 3D project.
