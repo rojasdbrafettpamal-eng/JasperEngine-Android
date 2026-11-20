@@ -4,8 +4,9 @@ Isolated mobile editor UI prototype, separate from JasperEngine's game player/ex
 
 - Add, select, drag, rename, and nudge simple 2D placeholder objects.
 - Save/Open JSON scene snapshots using Android's file picker (prototype interchange only).
-- **Proyecto JE** exports a minimal project folder with `project.yaml`, `Main.scene`, `assets/`, `lua/`, and a default `audio/Main.mixer`.
-- **Abrir proyecto JE** selects one of those exported folders and loads its placeholder names, positions, and linked Lua text back into the prototype view. It does not run JasperEngine or become the full editor.
+- At launch the prototype shows a **Proyectos** home screen. The user chooses or creates a workspace folder once with Android's folder picker; its permission is persisted. Each new project gets its own subfolder automatically, and the home screen lists saved projects for reopening.
+- **Guardar proyecto** writes the current project's minimal folder (`project.yaml`, `Main.scene`, `assets/`, `lua/`, and `audio/Main.mixer`) into its selected workspace subfolder, without showing the folder picker every time.
+- Opening a listed project loads its placeholder names, positions, and linked Lua text back into the prototype view. It does not run JasperEngine or become the full editor.
 - The **Lua** button opens a plain text editor for the selected object. Its code is included in the JSON snapshot and exported as `scripts/Script_N.lua`, linked from the scene. The template exposes JasperEngine's `init` and `onUpdate` lifecycle plus 2D collision callback stubs. This Android prototype does not execute or validate Lua.
 - **Física 2D / Collider** adds a serialized `rigidbody2d` component to the selected object, with static/dynamic/kinematic body type, a polygon or circle collider, and an optional sensor/trigger. The settings are stored in prototype JSON and emitted in the JasperEngine scene YAML; the prototype itself still does not simulate physics or run scripts.
 
