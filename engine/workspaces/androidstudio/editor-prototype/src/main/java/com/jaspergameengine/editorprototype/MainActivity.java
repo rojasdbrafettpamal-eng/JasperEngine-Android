@@ -49,7 +49,7 @@ public final class MainActivity extends Activity {
         open.setOnClickListener(v -> note("Abrir proyecto aún no está conectado."));
         save.setOnClickListener(v -> note("Guardar proyecto aún no está conectado."));
 
-        scene = new SceneView();
+        scene = new SceneView(this);
         root.addView(scene, new LinearLayout.LayoutParams(-1, 0, 1));
 
         LinearLayout panel = new LinearLayout(this);
@@ -143,7 +143,7 @@ public final class MainActivity extends Activity {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
 
-    private final class SceneView extends View {
+    private static final class SceneView extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final ArrayList<Node> nodes = new ArrayList<>();
         private int selectedIndex = 0;
@@ -151,8 +151,8 @@ public final class MainActivity extends Activity {
         private boolean dragging;
         private Runnable onSelectionChanged = () -> {};
 
-        SceneView() {
-            super(MainActivity.this);
+        SceneView(android.content.Context context) {
+            super(context);
             nodes.add(new Node("Objeto 1", 0.5f, 0.5f));
             setBackgroundColor(Color.rgb(15, 18, 24));
         }
