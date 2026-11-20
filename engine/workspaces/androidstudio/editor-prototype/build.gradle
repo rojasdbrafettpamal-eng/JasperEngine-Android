@@ -1,0 +1,14 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'com.jaspergameengine.editorprototype'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.jaspergameengine.editorprototype'
+        minSdk 23
+        targetSdk 36
+        versionCode 1
+        versionName '0.1.0'
+    }
+}
