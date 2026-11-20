@@ -1,8 +1,10 @@
 # JasperEngine Android editor UI prototype
 
-An isolated first-stage Android editor UI shell, separate from the game's Android player/export path. It currently draws a small mock scene that supports adding, selecting, renaming, dragging and nudging objects with touch controls.
+Isolated mobile editor UI prototype, separate from JasperEngine's game player/exporter.
 
-The **Abrir** and **Guardar** buttons use Android's system document picker (Storage Access Framework). Save writes a JSON scene file to the folder the user chooses; Open reloads that prototype file. It does not yet use JasperEngine's native project/scene format, and it is not the complete editor.
+- Add, select, drag, rename, and nudge simple 2D placeholder objects.
+- Save/Open JSON scene snapshots using Android's file picker (prototype interchange only).
+- **Proyecto JE** exports a minimal project folder with `project.yaml`, `Main.scene`, `assets/`, `lua/`, and a default `audio/Main.mixer`. The scene YAML follows the repository's current template shape and converts placeholder positions to a 1280x720 scene. This is an experimental export, not a complete JasperEngine editor project: images, scripts, materials, full scene properties and direct project importing are not implemented.
 
 Build from the repository root:
 
