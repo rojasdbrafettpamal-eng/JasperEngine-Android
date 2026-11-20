@@ -6,6 +6,8 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.content.Intent;
+import android.content.ContentResolver;
+import android.provider.DocumentsContract;
 import android.net.Uri;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -31,6 +33,7 @@ public final class MainActivity extends Activity {
     private EditText nameInput;
     private static final int REQUEST_OPEN_SCENE = 4101;
     private static final int REQUEST_SAVE_SCENE = 4102;
+    private static final int REQUEST_EXPORT_PROJECT = 4103;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -49,12 +52,14 @@ public final class MainActivity extends Activity {
         root.addView(project, new LinearLayout.LayoutParams(-1, dp(25)));
 
         LinearLayout actions = row();
-        Button open = button("Abrir");
-        Button save = button("Guardar");
+        Button open = button("Abrir JSON");
+        Button save = button("Guardar JSON");
         Button add = button("+ Objeto");
+        Button export = button("Proyecto JE");
         actions.addView(open, weighted());
         actions.addView(save, weighted());
         actions.addView(add, weighted());
+        actions.addView(export, weighted());
         root.addView(actions, new LinearLayout.LayoutParams(-1, dp(52)));
         open.setOnClickListener(v -> openScenePicker());
         save.setOnClickListener(v -> saveScenePicker());
@@ -97,6 +102,7 @@ public final class MainActivity extends Activity {
         panel.addView(moveRow, new LinearLayout.LayoutParams(-1, dp(46)));
         root.addView(panel, new LinearLayout.LayoutParams(-1, dp(205)));
 
+        export.setOnClickListener(v -> exportProjectPicker());
         add.setOnClickListener(v -> {
             scene.addObject();
             refreshSelection();
@@ -114,6 +120,17 @@ public final class MainActivity extends Activity {
             startActivityForResult(intent, REQUEST_OPEN_SCENE);
         } catch (Exception e) {
             note("No se pudo abrir el selector de archivos.");
+        }
+    }
+
+    private void exportProjectPicker() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        try {
+            startActivityForResult(intent, REQUEST_EXPORT_PROJECT);
+        } catch (Exception e) {
+            note("No se pudo abrir el selector de carpetas.");
         }
     }
 
@@ -136,6 +153,148 @@ public final class MainActivity extends Activity {
         Uri uri = data.getData();
         if (requestCode == REQUEST_SAVE_SCENE) saveScene(uri);
         else if (requestCode == REQUEST_OPEN_SCENE) loadScene(uri);
+        else if (requestCode == REQUEST_EXPORT_PROJECT) exportProject(uri);
+    }
+
+    private void exportProject(Uri treeUri) {
+        try {
+            final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
+            getContentResolver().takePersistableUriPermission(treeUri, takeFlags);
+            String treeId = DocumentsContract.getTreeDocumentId(treeUri);
+            Uri root = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeId);
+            String sceneGuid = java.util.UUID.randomUUID().toString().replace("-", "");
+            long sceneId = (System.currentTimeMillis() & 0x7fffffffL);
+            String sceneName = "Main";
+            writeChild(root, "project.yaml", "application/yaml", projectYaml(sceneId, sceneGuid));
+            writeChild(root, sceneName + ".scene", "application/yaml", jasperSceneYaml(sceneId, sceneGuid, sceneName));
+            createChildDirectory(root, "assets");
+            createChildDirectory(root, "lua");
+            Uri audio = createChildDirectory(root, "audio");
+            writeChild(audio, "Main.mixer", "application/json", mixerJson());
+            note("Proyecto JasperEngine exportado en la carpeta elegida (project.yaml y Main.scene).");
+        } catch (Exception e) {
+            note("No se pudo exportar el proyecto: " + e.getMessage());
+        }
+    }
+
+    private Uri createChildDirectory(Uri parent, String name) throws Exception {
+        Uri existing = findChild(parent, name);
+        if (existing != null) return existing;
+        Uri created = DocumentsContract.createDocument(getContentResolver(), parent,
+                DocumentsContract.Document.MIME_TYPE_DIR, name);
+        if (created == null) throw new IllegalStateException("No se pudo crear la carpeta " + name);
+        return created;
+    }
+
+    private void writeChild(Uri parent, String name, String mime, String contents) throws Exception {
+        Uri file = findChild(parent, name);
+        if (file == null) file = DocumentsContract.createDocument(getContentResolver(), parent, mime, name);
+        if (file == null) throw new IllegalStateException("No se pudo crear " + name);
+        try (OutputStream out = getContentResolver().openOutputStream(file, "wt")) {
+            if (out == null) throw new IllegalStateException("No se pudo escribir " + name);
+            out.write(contents.getBytes(StandardCharsets.UTF_8));
+            out.flush();
+        }
+    }
+
+    private Uri findChild(Uri parent, String name) throws Exception {
+        Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(parent,
+                DocumentsContract.getDocumentId(parent));
+        String[] columns = {DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME};
+        try (android.database.Cursor cursor = getContentResolver().query(children, columns, null, null, null)) {
+            if (cursor == null) return null;
+            int idColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID);
+            int nameColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME);
+            while (cursor.moveToNext()) {
+                if (name.equals(cursor.getString(nameColumn))) {
+                    return DocumentsContract.buildDocumentUriUsingTree(parent, cursor.getString(idColumn));
+                }
+            }
+        }
+        return null;
+    }
+
+    private String projectYaml(long sceneId, String sceneGuid) {
+        return "formatVersion: 1\n" +
+                "name: JasperMobileProject\n" +
+                "canvasWidth: 1280\ncanvasHeight: 720\n" +
+                "scalingMode: letterbox\ntextureStrategy: none\nvsync: true\n" +
+                "foliageQuality:\n  desktop: high\n  mobile: low\n  web: low\n" +
+                "htmlUiMsaaSamples: 4\nhtmlUiGlyphAtlasMiB: 0\n" +
+                "htmlUiSdfPrimitives: true\nhtmlUiTransformAwareText: true\n" +
+                "graphics:\n  terrainQuality:\n    macos: high\n    ios: low\n    web: medium\n    android: low\n    linux: high\n    windows: high\n  compressTerrainLayers: true\n" +
+                "windowMode: windowed\nwindowWidth: 1280\nwindowHeight: 720\nwindowResizable: true\n" +
+                "luaDir: lua\nversionControl:\n  lfs: true\n" +
+                "startSceneId: " + sceneId + "\nmesh:\n  animationEntities: auto\n" +
+                "audio:\n  mixer: audio/Main.mixer\n  outputStage: linear\n  iosSessionCategory: ambient\n" +
+                "scenes:\n  - filepath: Main.scene\n    filepathGuid: " + sceneGuid + "\n";
+    }
+
+    private String mixerJson() throws Exception {
+        JSONObject params = new JSONObject();
+        params.put("threshold", -1);
+        params.put("release", 0.1);
+        params.put("lookahead", 1.5);
+        params.put("truePeak", 1);
+        JSONObject limiter = new JSONObject();
+        limiter.put("id", "74af815b");
+        limiter.put("type", "limiter");
+        limiter.put("params", params);
+        JSONArray effects = new JSONArray().put(limiter);
+        JSONObject master = new JSONObject();
+        master.put("id", "93fe5fa7");
+        master.put("name", "Master");
+        master.put("parent", JSONObject.NULL);
+        master.put("volume", 0);
+        master.put("effects", effects);
+        JSONObject mixer = new JSONObject();
+        mixer.put("format", "jasperengine.mixer");
+        mixer.put("version", 2);
+        mixer.put("updateMode", "scaled");
+        mixer.put("groups", new JSONArray().put(master));
+        return mixer.toString(2) + "\n";
+    }
+
+
+    private String jasperSceneYaml(long sceneId, String sceneGuid, String sceneName) {
+        StringBuilder y = new StringBuilder();
+        y.append("formatVersion: 8\nguid: ").append(sceneGuid).append("\nid: ").append(sceneId)
+                .append("\nname: ").append(yamlQuote(sceneName)).append("\nscene:\n")
+                .append("  backgroundColor: [0.25, 0.45, 0.65, 1]\n")
+                .append("  shadowQuality: auto\n  meshLodEnabled: true\n  meshLodThreshold: 1\n")
+                .append("  depthPrepassEnabled: false\n  lightState: off\n")
+                .append("  globalIlluminationIntensity: 0.1\n  globalIlluminationColor: [1, 1, 1]\n")
+                .append("  litQuality: high\n  ambientLight2DIntensity: 1\n  ambientLight2DColor: [1, 1, 1]\n")
+                .append("  shadow2DQuality: low\n  ssaoEnabled: false\n  ssaoRadius: 0.5\n")
+                .append("  ssaoIntensity: 1\n  ssaoBias: 0.025\n  ssrEnabled: false\n")
+                .append("  ssrMaxDistance: 8\n  ssrThickness: 0.5\n  ssrMaxSteps: 48\n")
+                .append("  ssrIntensity: 1\n  ssrBlur: 0\n  gravity2D: [0, -9.81]\n")
+                .append("  gravity3D: [0, -9.81, 0]\n  fixedResolutionEnabled: false\n")
+                .append("  fixedResolutionWidth: 640\n  fixedResolutionHeight: 360\n  fixedResolutionFilter: nearest\n")
+                .append("  enableUIEvents: not_set\nsceneType: scene_2d\nmainCamera: 0\n")
+                .append("shaderKeys:\n  - type: mesh\n    properties: 3075\n  - type: blit\n  - type: blit\n    properties: 4096\n")
+                .append("entities:\n");
+        ArrayList<SceneView.Node> nodes = scene.snapshot();
+        if (nodes.isEmpty()) return y.append("  ~\n").toString();
+        long entityId = 1001;
+        for (SceneView.Node n : nodes) {
+            y.append("  - type: Entity\n    entity: ").append(entityId++).append("\n    name: ")
+                    .append(yamlQuote(n.name)).append("\n    components:\n      transform:\n")
+                    .append("        position: [").append(Math.round(n.x * 1280)).append(", ")
+                    .append(Math.round(n.y * 720)).append(", 0]\n")
+                    .append("        rotation: [1, 0, 0, 0]\n        scale: [1, 1, 1]\n")
+                    .append("        visible: true\n        billboardRotation: [1, 0, 0, 0]\n")
+                    .append("        billboard: false\n        fakeBillboard: false\n")
+                    .append("        cylindricalBillboard: false\n");
+        }
+        return y.toString();
+    }
+
+    private String yamlQuote(String value) {
+        String safe = value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\n", " ").replace("\r", " ");
+        return "\"" + safe + "\"";
     }
 
     private void saveScene(Uri uri) {
@@ -218,7 +377,7 @@ public final class MainActivity extends Activity {
     private Button button(String label) {
         Button b = new Button(this);
         b.setText(label);
-        b.setTextSize(13);
+        b.setTextSize(11);
         b.setAllCaps(false);
         return b;
     }
