@@ -25,10 +25,14 @@ final class ScriptRuntime {
     };
 
     private final String source;
+    private final int targetIndex;
     private Scriptable scope;
     private boolean initialized;
 
-    ScriptRuntime(String source) { this.source = source == null ? "" : source; }
+    ScriptRuntime(String source, int targetIndex) {
+        this.source = source == null ? "" : source;
+        this.targetIndex = targetIndex;
+    }
 
     String update(String sceneJson, float deltaSeconds) {
         Context context = FACTORY.enterContext();
@@ -40,11 +44,17 @@ final class ScriptRuntime {
             Scriptable scene = (Scriptable) context.evaluateString(scope,
                     "JSON.parse(" + JSONObject.quote(sceneJson) + ")", "scene-state.js", 1, null);
             ScriptableObject.putProperty(scope, "scene", scene);
+            Object objectsValue = ScriptableObject.getProperty(scene, "objetos");
+            if (!(objectsValue instanceof Scriptable)) throw new EvaluatorException("No encontré la lista de objetos de la escena.");
+            Object targetValue = ScriptableObject.getProperty((Scriptable) objectsValue, targetIndex);
+            if (!(targetValue instanceof Scriptable)) throw new EvaluatorException("No encontré el objeto asociado a este código.");
+            Scriptable target = (Scriptable) targetValue;
+            ScriptableObject.putProperty(scope, "obj", target);
             if (!initialized) {
-                call(context, "init", scene, 0f);
+                call(context, "init", scene, target, 0f);
                 initialized = true;
             }
-            call(context, "update", scene, deltaSeconds);
+            call(context, "update", scene, target, deltaSeconds);
             Object output = context.evaluateString(scope, "JSON.stringify(scene)", "scene-output.js", 1, null);
             return Context.toString(output);
         } finally {
@@ -52,9 +62,12 @@ final class ScriptRuntime {
         }
     }
 
-    private void call(Context context, String name, Scriptable scene, float dt) {
+    private void call(Context context, String name, Scriptable scene, Scriptable target, float dt) {
         Object candidate = ScriptableObject.getProperty(scope, name);
         if (!(candidate instanceof Function)) return;
-        ((Function) candidate).call(context, scope, scope, new Object[]{scene, dt});
+        Object[] args = "init".equals(name)
+                ? new Object[]{scene, target}
+                : new Object[]{scene, dt, target};
+        ((Function) candidate).call(context, scope, scope, args);
     }
 }
