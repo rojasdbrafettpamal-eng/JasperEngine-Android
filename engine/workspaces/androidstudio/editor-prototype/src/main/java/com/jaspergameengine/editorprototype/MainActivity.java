@@ -848,7 +848,7 @@ root.setPadding(dp(12), dp(10), dp(12), dp(10));
 root.setBackgroundColor(Color.rgb(20, 23, 30));
 TextView title = text("EDITOR JAVASCRIPT · Play usa este código", 15, Color.WHITE);
 root.addView(title, new LinearLayout.LayoutParams(-1, dp(42)));
-TextView hint = text("Funciones disponibles: init(escena) y update(escena, dt). escena.objetos contiene nombre, x, y, vx, vy y dinamico.",
+TextView hint = text("Este código queda unido a este objeto: init(escena, obj) y update(escena, dt, obj). Cambia obj.x/y o obj.vx/vy; y aumenta hacia abajo. Para gravedad, activa Dinámico.",
 12, Color.rgb(166, 177, 194));
 root.addView(hint, new LinearLayout.LayoutParams(-1, dp(54)));
 EditText name = new EditText(this);
@@ -905,14 +905,14 @@ note("Guardé " + fileName + ". En Play se ejecutará en la escena de prueba.");
 setContentView(root);
 }
 private String defaultJavascript(String objectName) {
-return "// JavaScript del proyecto · corre al pulsar Play\n" +
-"function init(escena) {\n" +
-"  // Preparación inicial. Los objetos tienen x, y, vx, vy y dinamico.\n" +
+return "// Este código está conectado directamente a: " + (objectName == null ? "este objeto" : objectName) + "\n" +
+"// Activa Física 2D > Dinámico en este objeto para que la gravedad actúe.\n" +
+"function init(escena, obj) {\n" +
+"  obj.vy = 0;\n" +
 "}\n\n" +
-"function update(escena, dt) {\n" +
-"  // Ejemplo: mover el objeto llamado \"" + (objectName == null ? "Cubo" : objectName) + "\" hacia la derecha.\n" +
-"  // const cubo = escena.objetos.find(o => o.nombre === \"" + (objectName == null ? "Cubo" : objectName) + "\");\n" +
-"  // if (cubo) cubo.vx = 0.2;\n" +
+"function update(escena, dt, obj) {\n" +
+"  // Prueba: el código da un pequeño impulso hacia abajo al objeto asociado.\n" +
+"  if (obj.dinamico) obj.vy = Math.min(obj.vy + 0.5 * dt, 2.5);\n" +
 "}\n";
 }
 private void addMoveButton(LinearLayout row, String label, float dx, float dy) {
@@ -958,7 +958,12 @@ Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
 private static final class SceneView extends View {
 private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 private final ArrayList<Node> nodes = new ArrayList<>();
-private final ArrayList<ScriptRuntime> runtimes = new ArrayList<>();
+private final ArrayList<ScriptBinding> runtimes = new ArrayList<>();
+private static final class ScriptBinding {
+final int targetIndex;
+final ScriptRuntime runtime;
+ScriptBinding(int targetIndex, ScriptRuntime runtime) { this.targetIndex = targetIndex; this.runtime = runtime; }
+}
 private final ArrayList<float[]> editPositions = new ArrayList<>();
 private String previewError = "";
 private int selectedIndex = 0;
@@ -1008,10 +1013,11 @@ previewError = "";
 runtimes.clear();
 if (enabled) {
 editPositions.clear();
-for (Node n : nodes) {
+for (int i = 0; i < nodes.size(); i++) {
+Node n = nodes.get(i);
 editPositions.add(new float[]{n.x, n.y});
 n.vx = 0; n.vy = 0;
-if (n.jsCode != null && !n.jsCode.trim().isEmpty()) runtimes.add(new ScriptRuntime(n.jsCode));
+if (n.jsCode != null && !n.jsCode.trim().isEmpty()) runtimes.add(new ScriptBinding(i, new ScriptRuntime(n.jsCode, i)));
 }
 } else {
 for (int i = 0; i < nodes.size() && i < editPositions.size(); i++) {
@@ -1026,17 +1032,24 @@ void advancePreview(float dt) {
 if (!previewMode) return;
 try {
 String state = runtimeSceneJson();
-for (ScriptRuntime runtime : runtimes) state = runtime.update(state, dt);
+for (ScriptBinding binding : runtimes) state = binding.runtime.update(state, dt);
 if (!runtimes.isEmpty()) applyRuntimeScene(state);
 } catch (Exception e) {
 previewError = e.getMessage() == null ? "Error de JavaScript" : e.getMessage();
+Toast.makeText(getContext(), "JavaScript: " + previewError, Toast.LENGTH_LONG).show();
 runtimes.clear();
 }
 float halfH = dp(24) / (float) Math.max(1, getHeight());
 float halfW = dp(34) / (float) Math.max(1, getWidth());
 for (int i = 0; i < nodes.size(); i++) {
 Node n = nodes.get(i);
-if (!n.physicsEnabled || !"dynamic".equals(n.bodyType)) continue;
+if (!n.physicsEnabled || !"dynamic".equals(n.bodyType)) {
+if (n.jsCode != null && !n.jsCode.trim().isEmpty()) {
+n.x = clamp(n.x + n.vx * dt);
+n.y = clamp(n.y + n.vy * dt);
+}
+continue;
+}
 float oldY = n.y;
 n.vy = Math.min(2.5f, n.vy + 1.8f * dt);
 n.x = clamp(n.x + n.vx * dt);
