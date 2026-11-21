@@ -68,7 +68,11 @@ final class SpriteSkinTools {
         TextView title=label("PINTOR PIXEL ART · 16 × 16",16,Color.WHITE);root.addView(title,new LinearLayout.LayoutParams(-1,dp(42)));
         EditText filename=new EditText(activity);filename.setSingleLine(true);filename.setText(target.spriteName==null?target.name+"_skin":target.spriteName);filename.setHint("Nombre del sprite");filename.setTextColor(Color.WHITE);filename.setHintTextColor(Color.rgb(150,160,176));root.addView(filename,new LinearLayout.LayoutParams(-1,dp(50)));
         PaintView canvas=new PaintView(activity,target.spritePixels);LinearLayout.LayoutParams vp=new LinearLayout.LayoutParams(-1,0,1);vp.setMargins(dp(4),dp(8),dp(4),dp(8));root.addView(canvas,vp);
-        TextView paletteLabel=label("Color de pintura · transparente borra",13,Color.rgb(190,205,225));root.addView(paletteLabel,new LinearLayout.LayoutParams(-1,dp(32)));
+        LinearLayout paletteHeader=row();
+        TextView paletteLabel=label("Color de pintura",13,Color.rgb(190,205,225));paletteHeader.addView(paletteLabel,new LinearLayout.LayoutParams(0,dp(40),1));
+        Button eraser=button("⌫  Borrador");LinearLayout.LayoutParams eraserParams=new LinearLayout.LayoutParams(dp(132),dp(40));eraserParams.setMargins(dp(4),0,0,0);paletteHeader.addView(eraser,eraserParams);
+        root.addView(paletteHeader,new LinearLayout.LayoutParams(-1,dp(42)));
+        eraser.setOnClickListener(v->{canvas.color=Color.TRANSPARENT;paletteLabel.setText("Borrador activo · arrastra para borrar");});
         LinearLayout colors=row();for(int i=0;i<PALETTE.length;i++){final int index=i;Button swatch=button(i==0?"□":"●");swatch.setTextColor(PALETTE[i]==Color.TRANSPARENT?Color.WHITE:PALETTE[i]);LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(0,dp(44),1);sp.setMargins(dp(2),0,dp(2),0);colors.addView(swatch,sp);swatch.setOnClickListener(v->{canvas.color=PALETTE[index];paletteLabel.setText(index==0?"Transparente · borrar pixeles":"Color seleccionado · toca la cuadrícula");});}
         root.addView(colors,new LinearLayout.LayoutParams(-1,dp(48)));
         LinearLayout actions=row();Button cancel=button("Cancelar"),clear=button("Limpiar"),save=button("Guardar y usar");for(Button b:new Button[]{cancel,clear,save}){LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(0,dp(48),1);ap.setMargins(dp(2),0,dp(2),0);actions.addView(b,ap);}root.addView(actions,new LinearLayout.LayoutParams(-1,dp(54)));
