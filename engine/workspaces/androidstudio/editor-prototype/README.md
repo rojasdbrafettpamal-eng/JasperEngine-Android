@@ -1,14 +1,15 @@
 # JasperEngine Android editor UI prototype
 
-This remains a limited Android editor/preview prototype separate from JasperEngine's native editor and Box2D runtime.
+This is a limited Android editor and preview prototype, separate from JasperEngine's native editor/Box2D runtime.
 
-- Create projects in a persisted user-selected folder, autosave changes into each project, and resume the last project from the home screen.
-- Choose project type 2D or 3D at creation. 3D is stored as metadata only; its editor, rendering, physics and Play mode are a later stage.
-- Add, select, drag, rename and reposition simple 2D objects. Named JavaScript files execute in an isolated preview and receive their attached object as `obj` in `init(scene,obj)` / `update(scene,dt,obj)`.
-- Prototype Play applies simple gravity and approximate contacts. The drawing area/frame is not a physics object or floor: dynamic objects fall beyond the visible canvas and disappear from view. Only configured objects can catch them.
-- **Sprite / Skin** offers ready-made blue/red/green pixel characters and a 16×16 paint editor with color palette, transparency/erase, clear, naming, saving and applying to the selected object. Pixel data persists in `MobileScene.json` and is exported under `assets/sprites/`; sprites can be reused on other objects in the scene.
-- The main controls are arranged in spaced rows with padding and a distinct Play button.
-- YAML export is experimental and limited; this is not JasperEngine's native editor/runtime and does not provide full Box2D or native script integration.
+- The bottom inspector is a draggable, scrollable drawer. It can expand/collapse to show its controls.
+- The inspector's manual move arrows were removed to leave room for project behaviours. Physics/collider settings remain available for setting up the prototype's dynamic body.
+- **Objetos y scripts** lists every scene object and all named JavaScript scripts attached to it. Add, edit or delete multiple scripts per object. Scripts persist in `MobileScene.json` and export as separate `.js` files.
+- At Play each object's scripts run in list order with the same scene state. Each gets `obj` for its attached object and `escena.objetos` to find other objects by name and read/write positions and velocities. Tapping an object in Play sets its `tocado` property for that update, enabling tap-driven arrows and inter-object behaviour. This is prototype-level synchronization, not native engine events or full collision callbacks.
+- Prototype Play has simple gravity and approximate contacts. The canvas edge is not a floor; dynamic objects can fall below the visible area. It is not Box2D/JasperEngine native physics.
+- **Sprites / skins** provides ready-made pixel sprites and a 16×16 painter. Pixel data is stored in the scene and exported under `assets/sprites/`, and can be reused on other objects in the project.
+- 3D remains project metadata only; no 3D editor, rendering, physics or Play runtime in this stage.
+- YAML export remains a minimal prototype and is not a complete JasperEngine project.
 
 Build:
 
