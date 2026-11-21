@@ -1,19 +1,12 @@
-# JasperEngine Android editor UI prototype
+# JasperEngine Android editor prototype — arcade preview
 
-This is a limited Android editor and preview prototype, separate from JasperEngine's native editor/Box2D runtime.
+The Android editor is still a limited prototype, separate from JasperEngine's native editor and Box2D runtime.
 
-- The bottom inspector is a draggable, scrollable drawer. It can expand/collapse to show its controls.
-- The inspector's manual move arrows were removed to leave room for project behaviours. Physics/collider settings remain available for setting up the prototype's dynamic body.
-- **Objetos y scripts** lists every scene object and all named JavaScript scripts attached to it. Add, edit or delete multiple scripts per object. Scripts persist in `MobileScene.json` and export as separate `.js` files.
-- At Play each object's scripts run in list order with the same scene state. Each gets `obj` for its attached object and `escena.objetos` to find other objects by name and read/write positions and velocities. Tapping an object in Play sets its `tocado` property for that update, enabling tap-driven arrows and inter-object behaviour. This is prototype-level synchronization, not native engine events or full collision callbacks.
-- Prototype Play has simple gravity and approximate contacts. The canvas edge is not a floor; dynamic objects can fall below the visible area. It is not Box2D/JasperEngine native physics.
-- **Sprites / skins** provides ready-made pixel sprites and a 16×16 painter. Pixel data is stored in the scene and exported under `assets/sprites/`, and can be reused on other objects in the project.
-- 3D remains project metadata only; no 3D editor, rendering, physics or Play runtime in this stage.
-- YAML export remains a minimal prototype and is not a complete JasperEngine project.
+- Play opens a full-screen preview instead of leaving the editor grid and property panels visible. It includes a starfield, layered hills, ground strip, score/time HUD, exit control and restart after a collision.
+- Objects named `Cohete`, `Avion`/`Avión`, `Aeronave`, `Personaje` or `Player` are treated as the aircraft. `Meteorito`, `Meteoro` or `Meteor` identifies the obstacle. A `Suelo` / `Piso` / `Ground` / `Floor` object is reserved as the ground marker. Matching is case-insensitive and ignores accents.
+- Without custom sprites, the game draws a small spaceship and rocky meteor; assigned pixel-art skins are used as-is.
+- One meteor falls through a random horizontal lane, speeds up gradually and returns above the screen in a new lane when it passes the bottom. The score counts dodged meteors. Hitting the aircraft ends the run; tap to restart.
+- Existing arrow scripts can control the aircraft. Tapping and holding an arrow exposes `obj.presionado=true`; release resets it. Scene scripts still execute on the prototype runtime.
+- This is a lightweight Java preview with approximate collision detection, not a native JasperEngine runtime or Box2D. 3D remains unavailable.
 
-Build:
-
-```sh
-cd engine/workspaces/androidstudio
-./gradlew --no-daemon :editor-prototype:assembleDebug
-```
+Build: `cd engine/workspaces/androidstudio && ./gradlew --no-daemon :editor-prototype:assembleDebug`
