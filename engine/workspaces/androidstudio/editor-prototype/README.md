@@ -20,3 +20,5 @@ cd engine/workspaces/androidstudio
 ```
 - Projects autosave in their own folder on edits (debounced), on Android activity pause, and when leaving for the Projects screen. The home screen offers a “Continue project” shortcut for the most recently opened project, and each saved folder remains in the Projects list after restarting the app.
 - New-project dialog includes 2D and 3D choices. The chosen dimension is stored in `MobileScene.json`, shown on the home screen and on the editor status label. 3D is only a project-type marker in this stage; the 3D editor, rendering, physics and Play mode are explicitly not implemented yet. The 2D preview does not run for a 3D project.
+
+- Each saved JavaScript script now receives the object it belongs to as the third parameter `obj` in `update(scene, dt, obj)` (and the second parameter in `init(scene, obj)`). It can directly read/write `obj.nombre`, `obj.x`, `obj.y`, `obj.vx`, `obj.vy`, `obj.dinamico`, and `obj.fisica`; `scene.objetos` remains available to find or affect other objects. Coordinates are normalized (0–1), with `y` increasing downward. Script runtime errors are surfaced as a Toast and in the preview.
