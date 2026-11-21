@@ -2,6 +2,7 @@ package com.jaspergameengine.editorprototype;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.graphics.Canvas;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
@@ -64,18 +65,22 @@ root.addView(title, new LinearLayout.LayoutParams(-1, dp(42)));
 projectLabel = text("Prototipo 2D · escena, JavaScript y física", 12, Color.rgb(166, 177, 194));
 projectLabel.setPadding(dp(16), 0, dp(12), dp(8));
 root.addView(projectLabel, new LinearLayout.LayoutParams(-1, dp(25)));
-LinearLayout actions = row();
+LinearLayout actionsTop = row();
+actionsTop.setPadding(dp(4), dp(2), dp(4), dp(2));
 Button open = button("Abrir JSON");
-Button save = button("Guardar JSON");
-Button add = button("+ Objeto");
-Button export = button("Guardar proyecto");
+Button add = button("＋ Objeto");
 playButton = button("▶ Play");
-actions.addView(playButton, weighted());
-actions.addView(open, weighted());
-actions.addView(save, weighted());
-actions.addView(add, weighted());
-actions.addView(export, weighted());
-root.addView(actions, new LinearLayout.LayoutParams(-1, dp(52)));
+addActionButton(actionsTop, playButton, true);
+addActionButton(actionsTop, add, false);
+addActionButton(actionsTop, open, false);
+root.addView(actionsTop, new LinearLayout.LayoutParams(-1, dp(54)));
+LinearLayout actionsBottom = row();
+actionsBottom.setPadding(dp(4), dp(2), dp(4), dp(4));
+Button save = button("Guardar JSON");
+Button export = button("Guardar proyecto");
+addActionButton(actionsBottom, save, false);
+addActionButton(actionsBottom, export, false);
+root.addView(actionsBottom, new LinearLayout.LayoutParams(-1, dp(54)));
 LinearLayout projectActions = row();
 Button openProject = button("Abrir proyecto JE");
 projectActions.addView(openProject, new LinearLayout.LayoutParams(-1, dp(44)));
@@ -103,15 +108,18 @@ nameInput.setText("Objeto 1");
 nameInput.setHint("Nombre del objeto");
 nameInput.setTextColor(Color.WHITE);
 nameInput.setHintTextColor(Color.rgb(150, 160, 176));
-editRow.addView(nameInput, new LinearLayout.LayoutParams(0, dp(48), 1));
+editRow.setPadding(0, dp(2), 0, dp(2));
+editRow.addView(nameInput, new LinearLayout.LayoutParams(0, dp(50), 1));
 Button rename = button("Aplicar");
-editRow.addView(rename, new LinearLayout.LayoutParams(dp(76), dp(48)));
+editRow.addView(rename, new LinearLayout.LayoutParams(dp(86), dp(50)));
 Button editCode = button("JavaScript");
-editRow.addView(editCode, new LinearLayout.LayoutParams(dp(104), dp(48)));
+editRow.addView(editCode, new LinearLayout.LayoutParams(dp(112), dp(50)));
 panel.addView(editRow, new LinearLayout.LayoutParams(-1, dp(50)));
 editCode.setOnClickListener(v -> openScriptEditor(scene.selected()));
 Button physicsButton = button("Física 2D / Collider");
-panel.addView(physicsButton, new LinearLayout.LayoutParams(-1, dp(42)));
+LinearLayout.LayoutParams physicsParams = new LinearLayout.LayoutParams(-1, dp(46));
+physicsParams.topMargin = dp(5);
+panel.addView(physicsButton, physicsParams);
 physicsButton.setOnClickListener(v -> {
 if ("3D".equals(projectDimension)) note("La física 3D se implementará en la siguiente etapa.");
 else editPhysicsForSelected();
@@ -129,8 +137,13 @@ addMoveButton(moveRow, "←", -0.06f, 0);
 addMoveButton(moveRow, "↑", 0, -0.06f);
 addMoveButton(moveRow, "↓", 0, 0.06f);
 addMoveButton(moveRow, "→", 0.06f, 0);
-panel.addView(moveRow, new LinearLayout.LayoutParams(-1, dp(46)));
-root.addView(panel, new LinearLayout.LayoutParams(-1, dp(205)));
+panel.addView(moveRow, new LinearLayout.LayoutParams(-1, dp(48)));
+Button spriteButton = button("🎨  Sprite / Skin");
+LinearLayout.LayoutParams spriteParams = new LinearLayout.LayoutParams(-1, dp(46));
+spriteParams.topMargin = dp(4);
+panel.addView(spriteButton, spriteParams);
+spriteButton.setOnClickListener(v -> showSpriteChooser(scene.selected()));
+root.addView(panel, new LinearLayout.LayoutParams(-1, dp(260)));
 export.setOnClickListener(v -> saveActiveProject());
 add.setOnClickListener(v -> {
 scene.addObject();
@@ -481,7 +494,15 @@ long sceneId = (System.currentTimeMillis() & 0x7fffffffL);
 String sceneName = "Main";
 writeChild(root, "project.yaml", "application/yaml", projectYaml(sceneId, sceneGuid));
 writeChild(root, sceneName + ".scene", "application/yaml", jasperSceneYaml(sceneId, sceneGuid, sceneName));
-createChildDirectory(root, "assets");
+Uri assets = createChildDirectory(root, "assets");
+Uri spriteFolder = createChildDirectory(assets, "sprites");
+for (SceneView.Node node : scene.snapshot()) {
+if (node.spritePixels != null && node.spriteName != null && !node.spriteName.trim().isEmpty()) {
+JSONArray pixelArray = new JSONArray(); for (int pixel : node.spritePixels) pixelArray.put(pixel);
+JSONObject spriteJson = new JSONObject(); spriteJson.put("name", node.spriteName); spriteJson.put("width", SpriteSkinTools.SIZE); spriteJson.put("height", SpriteSkinTools.SIZE); spriteJson.put("pixels", pixelArray);
+writeChild(spriteFolder, safeSpriteFileName(node.spriteName), "application/json", spriteJson.toString(2));
+}
+}
 Uri audio = createChildDirectory(root, "audio");
 writeChild(audio, "Main.mixer", "application/json", mixerJson());
 writeChild(root, "MobileScene.json", "application/json", projectStateJson().toString(2));
@@ -737,6 +758,8 @@ item.put("colliderType", node.colliderType);
 item.put("sensor", node.sensor);
 item.put("scriptName", node.scriptName == null ? "" : node.scriptName);
 item.put("jsCode", node.jsCode == null ? "" : node.jsCode);
+item.put("spriteName", node.spriteName == null ? "" : node.spriteName);
+if (node.spritePixels != null) { JSONArray pixels = new JSONArray(); for (int pixel : node.spritePixels) pixels.put(pixel); item.put("spritePixels", pixels); }
 objects.put(item);
 }
 JSONObject document = new JSONObject();
@@ -762,9 +785,17 @@ node.colliderType = item.optString("colliderType", "polygon");
 node.sensor = item.optBoolean("sensor", false);
 node.scriptName = item.optString("scriptName", "");
 node.jsCode = item.optString("jsCode", "");
+node.spriteName = item.optString("spriteName", "");
+JSONArray sprite = item.optJSONArray("spritePixels");
+if (sprite != null && sprite.length() == SpriteSkinTools.SIZE * SpriteSkinTools.SIZE) { int[] pixels = new int[sprite.length()]; for (int k=0;k<pixels.length;k++) pixels[k] = sprite.optInt(k, Color.TRANSPARENT); node.setSprite(node.spriteName, pixels); }
 nodes.add(node);
 }
 return nodes;
+}
+private String safeSpriteFileName(String name) {
+String file = name == null || name.trim().isEmpty() ? "Sprite" : name.trim();
+file = file.replaceAll("[^A-Za-z0-9_-]", "_");
+return file + ".sprite.json";
 }
 private String safeScriptFileName(String name) {
 String file = name == null || name.trim().isEmpty() ? "Script.js" : name.trim();
@@ -915,9 +946,18 @@ return "// Este código está conectado directamente a: " + (objectName == null 
 "  if (obj.dinamico) obj.vy = Math.min(obj.vy + 0.5 * dt, 2.5);\n" +
 "}\n";
 }
+private void showSpriteChooser(SceneView.Node node) {
+SpriteSkinTools tools = new SpriteSkinTools(this, node, scene.snapshot(),
+() -> scriptEditorActive = true,
+() -> { scriptEditorActive = false; setContentView(editorRoot); },
+() -> { scriptEditorActive = false; scene.invalidate(); scheduleAutoSave(); saveActiveProject(); note("Sprite " + node.spriteName + " guardado y aplicado a " + node.name + "."); });
+tools.show();
+}
 private void addMoveButton(LinearLayout row, String label, float dx, float dy) {
 Button b = button(label);
-row.addView(b, new LinearLayout.LayoutParams(0, dp(42), 1));
+LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(44), 1);
+params.setMargins(dp(2), 0, dp(2), 0);
+row.addView(b, params);
 b.setOnClickListener(v -> scene.moveSelected(dx, dy));
 }
 private void refreshSelection() {
@@ -934,11 +974,24 @@ return r;
 private LinearLayout.LayoutParams weighted() {
 return new LinearLayout.LayoutParams(0, dp(48), 1);
 }
+private void addActionButton(LinearLayout parent, Button b, boolean primary) {
+LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(48), 1);
+params.setMargins(dp(3), 0, dp(3), 0);
+parent.addView(b, params);
+if (primary) {
+b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(49, 135, 97)));
+b.setTextColor(Color.WHITE);
+}
+}
 private Button button(String label) {
 Button b = new Button(this);
 b.setText(label);
-b.setTextSize(11);
+b.setTextSize(12);
 b.setAllCaps(false);
+b.setMinHeight(dp(44));
+b.setPadding(dp(8), dp(5), dp(8), dp(5));
+b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(53, 64, 82)));
+b.setTextColor(Color.WHITE);
 return b;
 }
 private TextView text(String value, int size, int color) {
@@ -955,7 +1008,7 @@ return (int)(value * getResources().getDisplayMetrics().density + 0.5f);
 private void note(String message) {
 Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
 }
-private static final class SceneView extends View {
+static final class SceneView extends View {
 private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 private final ArrayList<Node> nodes = new ArrayList<>();
 private final ArrayList<ScriptBinding> runtimes = new ArrayList<>();
@@ -1045,17 +1098,16 @@ for (int i = 0; i < nodes.size(); i++) {
 Node n = nodes.get(i);
 if (!n.physicsEnabled || !"dynamic".equals(n.bodyType)) {
 if (n.jsCode != null && !n.jsCode.trim().isEmpty()) {
-n.x = clamp(n.x + n.vx * dt);
-n.y = clamp(n.y + n.vy * dt);
+n.x += n.vx * dt;
+n.y += n.vy * dt;
 }
 continue;
 }
 float oldY = n.y;
 n.vy = Math.min(2.5f, n.vy + 1.8f * dt);
-n.x = clamp(n.x + n.vx * dt);
+n.x += n.vx * dt;
 n.y += n.vy * dt;
-float floorY = 1f - halfH;
-if (n.y > floorY) { n.y = floorY; n.vy = 0; }
+if (n.y > 2.5f) { n.y = 2.5f; n.vy = 0; }
 for (int j = 0; j < nodes.size(); j++) {
 if (i == j) continue;
 Node other = nodes.get(j);
@@ -1089,8 +1141,8 @@ JSONArray objects = new JSONObject(json).getJSONArray("objetos");
 for (int i = 0; i < Math.min(nodes.size(), objects.length()); i++) {
 Node n = nodes.get(i);
 JSONObject item = objects.getJSONObject(i);
-n.x = clamp((float) item.optDouble("x", n.x));
-n.y = clamp((float) item.optDouble("y", n.y));
+n.x = Math.max(-2.0f, Math.min(2.0f, (float) item.optDouble("x", n.x)));
+n.y = Math.max(-2.0f, Math.min(2.5f, (float) item.optDouble("y", n.y)));
 n.vx = Math.max(-1.5f, Math.min(1.5f, (float) item.optDouble("vx", n.vx)));
 n.vy = Math.max(-2.5f, Math.min(2.5f, (float) item.optDouble("vy", n.vy)));
 }
@@ -1114,7 +1166,8 @@ Node n = nodes.get(i);
 float cx = n.x * w, cy = n.y * h;
 RectF box = new RectF(cx - dp(34), cy - dp(24), cx + dp(34), cy + dp(24));
 paint.setColor(i == selectedIndex ? Color.rgb(74, 133, 220) : Color.rgb(75, 91, 112));
-if ("circle".equals(n.colliderType)) c.drawCircle(cx, cy, dp(26), paint);
+if (n.spriteBitmap != null) { paint.setFilterBitmap(false); c.drawBitmap(n.spriteBitmap, null, box, paint); }
+else if ("circle".equals(n.colliderType)) c.drawCircle(cx, cy, dp(26), paint);
 else c.drawRoundRect(box, dp(7), dp(7), paint);
 if (i == selectedIndex) {
 paint.setStyle(Paint.Style.STROKE);
@@ -1171,10 +1224,14 @@ return true;
 }
 private float clamp(float v) { return Math.max(0.08f, Math.min(0.92f, v)); }
 private int dp(float value) { return (int)(value * getResources().getDisplayMetrics().density + 0.5f); }
-private static final class Node {
+static final class Node {
 String name;
 String scriptName;
 String jsCode;
+String spriteName;
+int[] spritePixels;
+Bitmap spriteBitmap;
+void setSprite(String name, int[] pixels) { spriteName = name; spritePixels = pixels == null ? null : pixels.clone(); spriteBitmap = spritePixels == null ? null : Bitmap.createBitmap(spritePixels, SpriteSkinTools.SIZE, SpriteSkinTools.SIZE, Bitmap.Config.ARGB_8888); }
 float vx = 0f, vy = 0f;
 boolean physicsEnabled = false;
 String bodyType = "static";
